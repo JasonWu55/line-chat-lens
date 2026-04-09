@@ -1,107 +1,114 @@
 # Telegram Chat Lens
 
-`Telegram Chat Lens` 是一個可部署到 GitHub Pages 的靜態網站，讓使用者把 Telegram 匯出的單一對話 `result.json` 拖進瀏覽器後，直接做視覺化分析。
+`Telegram Chat Lens` 是一個可直接部署為靜態網站的 Telegram 對話分析工具。使用者只要把 Telegram 匯出的單一對話 `result.json` 拖進頁面，瀏覽器就會在本機完成解析、統計與視覺化，不需要後端，也不會把聊天資料上傳到伺服器。
 
-這個專案的重點不是把聊天紀錄上傳到伺服器，而是完全在瀏覽器內處理資料，並盡量控制記憶體使用量，讓長時間跨度或大量訊息的對話也能分析。
+目前專案由單頁前端組成，適合部署到 GitHub Pages 或任何靜態檔案主機。
 
-本專案是由 Denny Huang 提出需求，並由 OpenAI Codex 協助撰寫與實作。
+## 專案現況
 
-## Features
+- 純前端靜態網站，沒有 build step
+- 使用 `Web Worker` 在背景解析大型 JSON
+- 以串流方式掃描 `messages` 陣列，不一次把整份匯出檔載入記憶體
+- 頁面內建 Telegram Desktop 匯出教學
+- 支援拖曳或手動選取 `result.json`
+- 適合分析長時間跨度、訊息量大的單一對話
 
-- 純靜態前端，可直接部署到 GitHub Pages
-- 瀏覽器端分析，不需要後端
-- 使用 Web Worker 分攤解析工作，避免主執行緒卡住
-- 以串流方式讀取檔案，不暴力載入整份 JSON
-- 只保留聚合統計，不保留完整訊息內容於記憶體
-- 支援拖放上傳與處理進度顯示
-- 提供互動式 tooltip，可在 hover 時查看精確數值
+## 目前提供的分析內容
 
-## Metrics
+- 摘要卡片
+  - 總訊息數
+  - 含文字訊息數
+  - 活躍天數
+  - 對話時間跨度
+  - 平均每日訊息量
+  - 發言最多者
+  - 典型回覆時間
+  - 最長沉默區間
+- 圖表與列表
+  - 月度訊息趨勢
+  - 日度訊息趨勢
+  - 每週時段熱區
+  - 回覆速度分布
+  - 熱門活躍日期
+  - 參與者比較
+  - 近似熱門詞
+  - 每位參與者的愛用詞彙與口頭禪候選
+  - 每位參與者的訊息樣態比例
+  - 通話互動分析
 
-目前頁面提供的分析指標包含：
+## 支援的資料來源
 
-- 總訊息數
-- 含文字訊息數
-- 活躍天數
-- 對話時間跨度
-- 平均每日訊息量
-- 最常發話者
-- 典型回覆時間
-- 最長沉默區間
-- 月度訊息趨勢
-- 每週時段熱區
-- 回覆速度分布
-- 熱門活躍日期
-- 參與者比較
-- 近似熱門詞
+目前以 Telegram Desktop 匯出的單一對話 JSON 為主要目標，頁面會從匯出檔內的 `messages` 陣列進行分析。
 
-## Privacy
+建議匯出方式：
 
-- 所有分析都在本地瀏覽器進行
-- 頁面不會把聊天資料上傳到伺服器
-- 建議不要把私人匯出檔提交到 Git repository
-- `.gitignore` 已預設排除 `result.json` 與常見匯出資料夾
+1. 在 Telegram Desktop 開啟要分析的單一對話。
+2. 點選右上角選單，選擇 `Export chat history`。
+3. 格式選 `JSON`。
+4. 匯出完成後，把資料夾內的 `result.json` 拖進頁面。
 
-## How To Export Telegram Data
+如果只想分析文字內容，可以不勾選媒體，匯出檔通常會更小。
 
-建議使用 Telegram Desktop 匯出。
+## 隱私
 
-1. 打開你要分析的單一對話。
-2. 開啟右上角選單，選擇 `Export chat history`。
-3. 在匯出設定中把格式改成 `JSON`。
-4. 匯出完成後，將資料夾中的 `result.json` 拖進本網站。
+- 所有處理都在本機瀏覽器內完成
+- 專案本身沒有後端，也不會主動上傳聊天資料
+- 不建議把私人匯出檔提交到 Git repository
+- 專案內的 `json/` 目錄目前放的是範例資料，不是應用程式執行所必需
 
-如果你只想分析文字，媒體選項可以不勾選，這樣匯出檔會更小。
+## 專案結構
 
-## Tech Notes
-
-這個專案沒有使用建置工具，也沒有外部前端框架。主要檔案如下：
-
-- `index.html`: 首頁與儀表板結構
+- `index.html`: 頁面結構、上傳區與各分析面板
 - `styles.css`: 版面與視覺樣式
-- `app.js`: UI 邏輯、圖表渲染、tooltip 互動
-- `worker.js`: 串流解析 Telegram 匯出 JSON，並建立聚合統計
+- `app.js`: UI 邏輯、圖表渲染、互動控制
+- `worker.js`: Telegram JSON 串流解析與聚合統計
+- `img/`: 匯出教學截圖
+- `json/`: 範例或測試用匯出資料
 
-## Local Development
+## 本機預覽
 
-因為使用了 module script 與 Web Worker，請用靜態伺服器預覽，不要直接雙擊開啟 HTML。
+因為頁面使用 `type="module"` 與 `Web Worker`，不要直接雙擊 `index.html` 開啟，請用靜態伺服器預覽。
 
 例如：
 
 ```bash
-python -m http.server 4173
+python3 -m http.server 4173
 ```
 
-然後打開：
+然後開啟：
 
 ```text
 http://localhost:4173
 ```
 
-## Deploy To GitHub Pages
+## 部署
 
-這個專案不需要 build step，只要把下列檔案推到 GitHub repository 即可：
+此專案沒有打包流程，直接把以下檔案與資料夾部署成靜態網站即可：
 
 - `index.html`
 - `styles.css`
 - `app.js`
 - `worker.js`
 - `img/`
-- `.nojekyll`
 
-如果你使用 GitHub Pages：
+如果要部署到 GitHub Pages，將上述檔案推到 repository 後，在 Pages 設定中選擇要發布的 branch 與資料夾即可。
 
-1. 建立 repository，例如 `telegram-chat-lens`
-2. 將專案推上 GitHub
-3. 在 repository settings 的 Pages 中選擇 branch 與 root folder
-4. 發布後即可直接使用
+## 實作說明
 
-## Limitations
+- 解析器會先定位 JSON 內的 `messages` 陣列，再逐筆組出訊息物件
+- 統計以聚合結果為主，不保留完整訊息清單在記憶體中
+- 熱門詞與口頭禪採 bounded heavy-hitter 類型的近似統計
+- 回覆速度以雙方交替發話的時間差估算，不是語意層級的精確回覆鏈
+- 通話分析依 Telegram 匯出中的 `phone_call` 事件與相關欄位整理
 
-- 目前預設以 Telegram 匯出的單一對話 JSON 結構為主
-- 熱門詞採近似 heavy-hitter 統計，不是全文精確詞頻
-- 回覆速度分布是依照雙方輪流發言的時間差估算，不是語意層級的精確「誰回誰」
-- 長時間沉默目前不會排除，超過 3 天的間隔會落在 `>3d` 區間
+## 已知限制
+
+- 目前主要針對 Telegram 單一對話的匯出 JSON
+- 若匯出格式缺少 `messages` 陣列，頁面會直接判定為不支援
+- 中文詞彙分析不是斷詞器結果，長字串會拆成連續雙字詞做近似統計
+- 熱門詞、愛用詞與口頭禪是近似值，不是全文精確詞頻
+- 回覆速度不會排除長時間沉默，超過 3 天會落在 `>3d`
+- 通話結果與時長依匯出檔提供的欄位品質而定
 
 ## License
 
