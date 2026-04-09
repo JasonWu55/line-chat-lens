@@ -193,8 +193,8 @@ function renderTimeline(timeline, participants) {
   }
 
   const width = 980;
-  const height = 320;
-  const padding = { top: 16, right: 16, bottom: 42, left: 46 };
+  const height = 356;
+  const padding = { top: 16, right: 16, bottom: 78, left: 46 };
   const innerWidth = width - padding.left - padding.right;
   const innerHeight = height - padding.top - padding.bottom;
   const maxTotal = Math.max(...timeline.map((entry) => entry.total), 1);
@@ -217,7 +217,7 @@ function renderTimeline(timeline, participants) {
         .join("");
       const axisLabel =
         index % labelStep === 0 || index === timeline.length - 1
-          ? `<text class="axis-text" x="${padding.left + index * barWidth + barWidth / 2}" y="${height - 18}" text-anchor="middle">${entry.label.slice(2)}</text>`
+          ? `<text class="axis-text" x="${padding.left + index * barWidth + barWidth / 2}" y="${padding.top + innerHeight + 24}" text-anchor="middle">${entry.label.slice(2)}</text>`
           : "";
       return `${segments}${axisLabel}`;
     })
@@ -234,7 +234,7 @@ function renderTimeline(timeline, participants) {
   const legend = participants
     .map(
       (name, index) =>
-        `<g transform="translate(${padding.left + index * 180}, ${height - 4})"><rect width="12" height="12" rx="3" fill="${colors[index % colors.length]}"></rect><text class="chart-title" x="18" y="11">${escapeHtml(name)}</text></g>`,
+        `<g transform="translate(${padding.left + index * 180}, ${height - 28})"><rect width="12" height="12" rx="3" fill="${colors[index % colors.length]}"></rect><text class="chart-title" x="18" y="11">${escapeHtml(name)}</text></g>`,
     )
     .join("");
 
