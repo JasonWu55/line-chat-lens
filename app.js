@@ -20,12 +20,22 @@ const summaryCardTemplate = document.querySelector("#summary-card-template");
 const replyInfoButton = document.querySelector("#reply-info-button");
 const replyInfo = document.querySelector("#reply-info");
 const chartTooltip = document.querySelector("#chart-tooltip");
+const guidePanel = document.querySelector("#guide-panel");
+const guideToggle = document.querySelector("#guide-toggle");
+const guideContent = document.querySelector("#guide-content");
 
 let currentFile = null;
 
 replyInfoButton.addEventListener("click", () => {
   const isHidden = replyInfo.classList.toggle("hidden");
   replyInfoButton.setAttribute("aria-expanded", String(!isHidden));
+});
+
+guideToggle.addEventListener("click", () => {
+  const isCollapsed = guideContent.classList.toggle("hidden");
+  guidePanel.classList.toggle("is-collapsed", isCollapsed);
+  guideToggle.setAttribute("aria-expanded", String(!isCollapsed));
+  guideToggle.textContent = isCollapsed ? "查看匯出教學" : "收起匯出教學";
 });
 
 fileInput.addEventListener("change", (event) => {
@@ -71,6 +81,8 @@ worker.addEventListener("message", ({ data }) => {
     statusText.textContent = "分析完成";
     renderDashboard(data.payload);
     dashboard.classList.remove("hidden");
+    collapseGuide();
+    scrollDashboardIntoView();
     return;
   }
 
@@ -114,6 +126,20 @@ function renderDashboard(payload) {
   renderCatchphrases(payload.catchphrases);
   renderMessageMix(payload.messageMix);
   renderPeople(payload.people);
+}
+
+function collapseGuide() {
+  guideContent.classList.add("hidden");
+  guidePanel.classList.add("is-collapsed");
+  guideToggle.setAttribute("aria-expanded", "false");
+  guideToggle.textContent = "查看匯出教學";
+}
+
+function scrollDashboardIntoView() {
+  dashboard.scrollIntoView({
+    behavior: "smooth",
+    block: "start",
+  });
 }
 
 function renderSummary(summary) {

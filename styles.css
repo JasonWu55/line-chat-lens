@@ -195,6 +195,12 @@ code {
   gap: 20px;
 }
 
+.guide-actions {
+  display: grid;
+  gap: 12px;
+  justify-items: end;
+}
+
 .guide-head h2,
 .guide-card h3 {
   margin: 0;
@@ -209,11 +215,36 @@ code {
   text-align: right;
 }
 
+.guide-toggle {
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 140ms ease, background 140ms ease;
+}
+
+.guide-toggle:hover,
+.guide-toggle[aria-expanded="true"] {
+  transform: translateY(-1px);
+  background: rgba(31, 122, 92, 0.2);
+}
+
+.guide-content {
+  margin-top: 18px;
+}
+
+.guide-panel.is-collapsed {
+  padding-bottom: 20px;
+}
+
 .guide-steps {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
-  margin-top: 18px;
 }
 
 .guide-card {
@@ -620,6 +651,10 @@ code {
   .panel-head {
     grid-template-columns: 1fr;
     display: grid;
+  }
+
+  .guide-actions {
+    justify-items: start;
   }
 
   .guide-copy,

@@ -46,18 +46,30 @@
         <div class="file-meta" id="file-meta"></div>
       </section>
 
-      <section class="guide-panel">
+      <section class="guide-panel is-collapsed" id="guide-panel">
         <div class="guide-head">
           <div>
             <p class="eyebrow">Export Guide</p>
             <h2>如何從 Telegram 匯出對話 JSON</h2>
           </div>
-          <p class="guide-copy">
-            建議使用 Telegram Desktop。這個分析頁需要的是匯出的 <code>result.json</code>，不是純文字或 HTML。
-          </p>
+          <div class="guide-actions">
+            <p class="guide-copy">
+              建議使用 Telegram Desktop。這個分析頁需要的是匯出的 <code>result.json</code>，不是純文字或 HTML。
+            </p>
+            <button
+              class="guide-toggle"
+              type="button"
+              id="guide-toggle"
+              aria-expanded="false"
+              aria-controls="guide-content"
+            >
+              查看匯出教學
+            </button>
+          </div>
         </div>
 
-        <div class="guide-steps">
+        <div class="guide-content hidden" id="guide-content">
+          <div class="guide-steps">
           <article class="guide-card">
             <div class="guide-text">
               <p class="guide-step">Step 1</p>
@@ -94,6 +106,7 @@
               />
             </figure>
           </article>
+          </div>
         </div>
       </section>
 
