@@ -13,6 +13,8 @@ const heatmapChart = document.querySelector("#heatmap-chart");
 const replyChart = document.querySelector("#reply-chart");
 const daysTable = document.querySelector("#days-table");
 const termsCloud = document.querySelector("#terms-cloud");
+const phrasesPanel = document.querySelector("#phrases-panel");
+const messageMixPanel = document.querySelector("#message-mix-panel");
 const peopleTable = document.querySelector("#people-table");
 const summaryCardTemplate = document.querySelector("#summary-card-template");
 const replyInfoButton = document.querySelector("#reply-info-button");
@@ -87,6 +89,8 @@ function handleFile(file) {
   replyChart.innerHTML = "";
   daysTable.innerHTML = "";
   termsCloud.innerHTML = "";
+  phrasesPanel.innerHTML = "";
+  messageMixPanel.innerHTML = "";
   peopleTable.innerHTML = "";
   setProgress(0);
   statusText.textContent = "初始化分析";
@@ -107,6 +111,8 @@ function renderDashboard(payload) {
   renderReplyHistogram(payload.replyHistogram);
   renderTopDays(payload.topDays);
   renderTerms(payload.topTerms);
+  renderCatchphrases(payload.catchphrases);
+  renderMessageMix(payload.messageMix);
   renderPeople(payload.people);
 }
 
@@ -337,6 +343,87 @@ function renderPeople(people) {
     }),
   ].join("");
   bindTooltips(peopleTable);
+}
+
+function renderCatchphrases(catchphrases) {
+  if (!catchphrases.length) {
+    phrasesPanel.innerHTML = `<div class="empty-state">文字訊息太少，無法整理出個人愛用詞。</div>`;
+    return;
+  }
+
+  phrasesPanel.innerHTML = catchphrases
+    .map((person) => {
+      const topWords = person.topWords.length
+        ? person.topWords
+            .map(
+              (entry) =>
+                `<span class="phrase-chip has-tooltip" data-tooltip="${escapeAttribute(`${entry.term}\n${person.name} 約用了 ${entry.count.toLocaleString()} 次`)}"><strong>${escapeHtml(entry.term)}</strong>${entry.count}</span>`,
+            )
+            .join("")
+        : `<span class="table-muted">沒有足夠的高頻詞。</span>`;
+
+      const topPhrases = person.topPhrases.length
+        ? person.topPhrases
+            .map(
+              (entry) =>
+                `<span class="phrase-chip warm has-tooltip" data-tooltip="${escapeAttribute(`${entry.term}\n${person.name} 約重複了 ${entry.count.toLocaleString()} 次`)}">「${escapeHtml(entry.term)}」<strong>${entry.count}</strong></span>`,
+            )
+            .join("")
+        : `<span class="table-muted">沒有明顯重複短句。</span>`;
+
+      return `<section class="phrase-person">
+        <div class="phrase-person-head">
+          <h3>${escapeHtml(person.name)}</h3>
+          <p>${person.messageShare}% 訊息占比</p>
+        </div>
+        <div class="phrase-group">
+          <p class="phrase-label">愛用詞彙</p>
+          <div class="phrase-list">${topWords}</div>
+        </div>
+        <div class="phrase-group">
+          <p class="phrase-label">口頭禪候選</p>
+          <div class="phrase-list">${topPhrases}</div>
+        </div>
+      </section>`;
+    })
+    .join("");
+
+  bindTooltips(phrasesPanel);
+}
+
+function renderMessageMix(messageMix) {
+  if (!messageMix.length) {
+    messageMixPanel.innerHTML = `<div class="empty-state">沒有足夠的訊息樣態資料。</div>`;
+    return;
+  }
+
+  messageMixPanel.innerHTML = messageMix
+    .map((person) => {
+      const rows = person.categories
+        .map((category) => {
+          const tooltip = `${person.name}\n${category.label}: ${category.count.toLocaleString()} 則\n占比 ${category.share}%`;
+          return `<div class="mix-row has-tooltip" data-tooltip="${escapeAttribute(tooltip)}">
+            <div class="mix-meta">
+              <strong>${escapeHtml(category.label)}</strong>
+              <span>${category.count.toLocaleString()} 則</span>
+            </div>
+            <div class="mix-bar"><span style="width:${category.share}%"></span></div>
+            <div class="mix-share">${category.share}%</div>
+          </div>`;
+        })
+        .join("");
+
+      return `<section class="mix-card">
+        <div class="phrase-person-head">
+          <h3>${escapeHtml(person.name)}</h3>
+          <p>${person.total.toLocaleString()} 則訊息</p>
+        </div>
+        <div class="mix-list">${rows}</div>
+      </section>`;
+    })
+    .join("");
+
+  bindTooltips(messageMixPanel);
 }
 
 function formatBytes(bytes) {

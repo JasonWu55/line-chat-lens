@@ -54,6 +54,18 @@ const STOPWORDS = new Set([
   "不是",
   "一個",
 ]);
+const PHRASE_STOPWORDS = new Set(["哈哈", "晚安", "早安", "貼圖", "圖片"]);
+const MESSAGE_TYPE_LABELS = {
+  text: "文字",
+  photo: "圖片",
+  sticker: "貼圖",
+  video: "影片",
+  voice: "語音",
+  audio: "音訊",
+  animation: "GIF/動畫",
+  file: "檔案",
+  other: "其他",
+};
 
 self.addEventListener("message", async ({ data }) => {
   if (data.type !== "analyze") {
@@ -192,6 +204,7 @@ function createState() {
     lastMessage: null,
     longestGap: null,
     heavyTerms: new Map(),
+    catchphraseStats: new Map(),
   };
 }
 
@@ -230,6 +243,7 @@ function processMessageObject(message, state) {
   if (hasMedia) {
     person.mediaMessages += 1;
   }
+  incrementMessageType(person.messageTypes, classifyMessageType(message, hasText));
 
   const dayKey = formatLocalDate(date);
   const monthKey = dayKey.slice(0, 7);
@@ -245,6 +259,7 @@ function processMessageObject(message, state) {
 
   if (hasText) {
     updateHeavyTerms(state.heavyTerms, trimmedText);
+    updateParticipantLanguage(state.catchphraseStats, sender, trimmedText);
   }
 
   if (state.lastMessage && state.lastMessage.sender !== sender) {
@@ -341,6 +356,8 @@ function buildPayload(state) {
       .map(([term, count]) => ({ term, count }))
       .sort((left, right) => right.count - left.count)
       .slice(0, 24),
+    catchphrases: buildCatchphrasePayload(state.catchphraseStats, state.totalMessages),
+    messageMix: buildMessageMixPayload(participants, state.participants),
     people: participants,
   };
 }
@@ -384,6 +401,34 @@ function detectMedia(message, hasText) {
   return mediaKeys.some((key) => key in message) || !hasText;
 }
 
+function classifyMessageType(message, hasText) {
+  if ("sticker_emoji" in message) {
+    return "sticker";
+  }
+  if ("photo" in message) {
+    return "photo";
+  }
+  if (message.media_type === "video_file" || "video_file_size" in message) {
+    return "video";
+  }
+  if (message.media_type === "voice_message") {
+    return "voice";
+  }
+  if (message.media_type === "audio_file" || "audio_file_size" in message) {
+    return "audio";
+  }
+  if (message.media_type === "animation") {
+    return "animation";
+  }
+  if ("file" in message || message.media_type === "document") {
+    return "file";
+  }
+  if (hasText) {
+    return "text";
+  }
+  return "other";
+}
+
 function getOrCreateParticipant(participants, name) {
   let participant = participants.get(name);
   if (!participant) {
@@ -391,10 +436,15 @@ function getOrCreateParticipant(participants, name) {
       messages: 0,
       characters: 0,
       mediaMessages: 0,
+      messageTypes: new Map(),
     };
     participants.set(name, participant);
   }
   return participant;
+}
+
+function incrementMessageType(messageTypes, type) {
+  messageTypes.set(type, (messageTypes.get(type) || 0) + 1);
 }
 
 function getOrCreateBucket(map, key) {
@@ -413,8 +463,7 @@ function addReplyDelay(state, delay) {
 }
 
 function updateHeavyTerms(heavyTerms, text) {
-  const normalized = text.toLowerCase().replace(/\s+/g, " ");
-  const tokens = normalized.match(/[\p{L}\p{N}_-]{2,}/gu) || [];
+  const tokens = extractTermTokens(text);
   for (const token of tokens) {
     if (STOPWORDS.has(token)) {
       continue;
@@ -435,6 +484,148 @@ function updateHeavyTerms(heavyTerms, text) {
       }
     }
   }
+}
+
+function updateParticipantLanguage(catchphraseStats, sender, text) {
+  let person = catchphraseStats.get(sender);
+  if (!person) {
+    person = {
+      words: new Map(),
+      phrases: new Map(),
+      messages: 0,
+    };
+    catchphraseStats.set(sender, person);
+  }
+
+  person.messages += 1;
+
+  for (const token of extractTermTokens(text)) {
+    if (STOPWORDS.has(token)) {
+      continue;
+    }
+    incrementHeavyHitters(person.words, token, 96);
+  }
+
+  for (const phrase of extractPhraseCandidates(text)) {
+    incrementHeavyHitters(person.phrases, phrase, 64);
+  }
+}
+
+function extractTermTokens(text) {
+  const normalized = text.toLowerCase().replace(/https?:\/\/\S+/g, " ").replace(/\s+/g, " ").trim();
+  const tokens = normalized.match(/[a-z0-9_-]{2,}|[\p{Script=Han}]{2,}/gu) || [];
+  const output = [];
+
+  for (const token of tokens) {
+    if (/^[\p{Script=Han}]+$/u.test(token)) {
+      if (token.length <= 4) {
+        output.push(token);
+        continue;
+      }
+
+      for (let index = 0; index < token.length - 1; index += 1) {
+        output.push(token.slice(index, index + 2));
+      }
+      continue;
+    }
+
+    output.push(token);
+  }
+
+  return output;
+}
+
+function extractPhraseCandidates(text) {
+  const normalized = text
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/[~!！?？,，.。:：;；、/\n\r\t]+/g, "|")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!normalized) {
+    return [];
+  }
+
+  const seen = new Set();
+  const phrases = [];
+  for (const rawPart of normalized.split("|")) {
+    const candidate = rawPart.trim().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
+    if (!candidate || candidate.length < 2 || candidate.length > 12) {
+      continue;
+    }
+    if (/^\d+$/u.test(candidate) || PHRASE_STOPWORDS.has(candidate)) {
+      continue;
+    }
+    if (seen.has(candidate)) {
+      continue;
+    }
+    seen.add(candidate);
+    phrases.push(candidate);
+  }
+  return phrases;
+}
+
+function incrementHeavyHitters(map, key, limit) {
+  if (map.has(key)) {
+    map.set(key, map.get(key) + 1);
+    return;
+  }
+  if (map.size < limit) {
+    map.set(key, 1);
+    return;
+  }
+  for (const [entry, count] of map.entries()) {
+    if (count <= 1) {
+      map.delete(entry);
+    } else {
+      map.set(entry, count - 1);
+    }
+  }
+}
+
+function buildCatchphrasePayload(catchphraseStats, totalMessages) {
+  return [...catchphraseStats.entries()]
+    .map(([name, stats]) => ({
+      name,
+      messageShare: totalMessages ? ((stats.messages / totalMessages) * 100).toFixed(1) : "0.0",
+      topWords: [...stats.words.entries()]
+        .map(([term, count]) => ({ term, count }))
+        .sort((left, right) => right.count - left.count || left.term.localeCompare(right.term))
+        .slice(0, 8),
+      topPhrases: [...stats.phrases.entries()]
+        .filter(([, count]) => count >= 2)
+        .map(([term, count]) => ({ term, count }))
+        .sort((left, right) => right.count - left.count || left.term.localeCompare(right.term))
+        .slice(0, 6),
+      messages: stats.messages,
+    }))
+    .sort((left, right) => right.messages - left.messages)
+    .map(({ messages: _messages, ...person }) => person);
+}
+
+function buildMessageMixPayload(participants, participantMap) {
+  return participants.map((person) => {
+    const source = participantMap.get(person.name);
+    const total = person.messages || 1;
+    const categories = Object.entries(MESSAGE_TYPE_LABELS)
+      .map(([key, label]) => {
+        const count = source?.messageTypes.get(key) || 0;
+        return {
+          key,
+          label,
+          count,
+          share: ((count / total) * 100).toFixed(1),
+        };
+      })
+      .filter((entry) => entry.count > 0)
+      .sort((left, right) => right.count - left.count);
+
+    return {
+      name: person.name,
+      total: person.messages,
+      categories,
+    };
+  });
 }
 
 function buildRangeLabel(first, last) {

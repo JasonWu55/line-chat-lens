@@ -436,6 +436,109 @@ code {
   gap: 10px;
 }
 
+.phrases-panel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.phrase-person {
+  padding: 18px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.46);
+  border: 1px solid rgba(80, 62, 42, 0.08);
+}
+
+.phrase-person-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+  margin-bottom: 14px;
+}
+
+.phrase-person-head h3,
+.phrase-person-head p,
+.phrase-label {
+  margin: 0;
+}
+
+.phrase-person-head h3 {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+}
+
+.phrase-person-head p,
+.phrase-label {
+  color: var(--muted);
+}
+
+.phrase-group + .phrase-group {
+  margin-top: 16px;
+}
+
+.phrase-label {
+  margin-bottom: 10px;
+  font-size: 0.9rem;
+}
+
+.phrase-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.message-mix-panel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.mix-card {
+  padding: 18px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.46);
+  border: 1px solid rgba(80, 62, 42, 0.08);
+}
+
+.mix-list {
+  display: grid;
+  gap: 12px;
+}
+
+.mix-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 120px) minmax(0, 1fr) 56px;
+  gap: 12px;
+  align-items: center;
+}
+
+.mix-meta strong,
+.mix-meta span,
+.mix-share {
+  display: block;
+}
+
+.mix-meta span,
+.mix-share {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.mix-bar {
+  overflow: hidden;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(31, 122, 92, 0.1);
+}
+
+.mix-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-warm) 100%);
+}
+
 .term-chip {
   padding: 10px 14px;
   border-radius: 999px;
@@ -443,8 +546,24 @@ code {
   border: 1px solid rgba(31, 122, 92, 0.14);
 }
 
+.phrase-chip {
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(31, 122, 92, 0.08);
+  border: 1px solid rgba(31, 122, 92, 0.14);
+}
+
+.phrase-chip.warm {
+  background: rgba(196, 109, 45, 0.1);
+  border-color: rgba(196, 109, 45, 0.2);
+}
+
 .term-chip strong {
   margin-right: 8px;
+}
+
+.phrase-chip strong {
+  margin-left: 8px;
 }
 
 .empty-state {
@@ -479,7 +598,9 @@ code {
   }
 
   .guide-steps,
-  .chart-grid {
+  .chart-grid,
+  .phrases-panel,
+  .message-mix-panel {
     grid-template-columns: 1fr;
   }
 
