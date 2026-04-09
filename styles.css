@@ -400,6 +400,49 @@ code {
   min-height: 280px;
 }
 
+.timeline-controls {
+  margin: -4px 0 16px;
+}
+
+.timeline-controls-inner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.timeline-range-label,
+.timeline-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.timeline-reset {
+  min-height: 42px;
+  border-radius: 12px;
+  border: 1px solid rgba(80, 62, 42, 0.12);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--ink);
+  font: inherit;
+}
+
+.timeline-reset {
+  padding: 0 16px;
+  cursor: pointer;
+  transition: transform 140ms ease, background 140ms ease;
+}
+
+.timeline-reset:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: rgba(31, 122, 92, 0.08);
+}
+
+.timeline-reset:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .svg-chart {
   width: 100%;
   height: auto;
@@ -417,6 +460,17 @@ code {
   fill: var(--ink);
   font-size: 13px;
   font-family: var(--font-ui);
+}
+
+.daily-brush-chart {
+  cursor: crosshair;
+}
+
+.brush-selection {
+  fill: rgba(31, 122, 92, 0.18);
+  stroke: rgba(31, 122, 92, 0.6);
+  stroke-width: 1;
+  pointer-events: none;
 }
 
 .table-block {

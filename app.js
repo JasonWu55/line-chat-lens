@@ -9,6 +9,8 @@ const progressText = document.querySelector("#progress-text");
 const fileMeta = document.querySelector("#file-meta");
 const summaryGrid = document.querySelector("#summary-grid");
 const timelineChart = document.querySelector("#timeline-chart");
+const dailyTimelineControls = document.querySelector("#daily-timeline-controls");
+const dailyTimelineChart = document.querySelector("#daily-timeline-chart");
 const heatmapChart = document.querySelector("#heatmap-chart");
 const replyChart = document.querySelector("#reply-chart");
 const daysTable = document.querySelector("#days-table");
@@ -25,6 +27,7 @@ const guideToggle = document.querySelector("#guide-toggle");
 const guideContent = document.querySelector("#guide-content");
 
 let currentFile = null;
+let dailyTimelineState = null;
 
 replyInfoButton.addEventListener("click", () => {
   const isHidden = replyInfo.classList.toggle("hidden");
@@ -95,8 +98,11 @@ worker.addEventListener("message", ({ data }) => {
 function handleFile(file) {
   currentFile = file;
   dashboard.classList.add("hidden");
+  dailyTimelineState = null;
   summaryGrid.innerHTML = "";
   timelineChart.innerHTML = "";
+  dailyTimelineControls.innerHTML = "";
+  dailyTimelineChart.innerHTML = "";
   heatmapChart.innerHTML = "";
   replyChart.innerHTML = "";
   daysTable.innerHTML = "";
@@ -119,6 +125,7 @@ function setProgress(value) {
 function renderDashboard(payload) {
   renderSummary(payload.summary);
   renderTimeline(payload.timeline, payload.participants);
+  renderDailyTimeline(payload.dailyTimeline, payload.participants);
   renderHeatmap(payload.heatmap);
   renderReplyHistogram(payload.replyHistogram);
   renderTopDays(payload.topDays);
@@ -277,6 +284,225 @@ function renderHeatmap(heatmap) {
 
   heatmapChart.innerHTML = `<svg class="svg-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="每週時段熱區圖">${xLabels}${yLabels}${cells}</svg>`;
   bindTooltips(heatmapChart);
+}
+
+function renderDailyTimeline(timeline, participants) {
+  if (!timeline.length) {
+    dailyTimelineControls.innerHTML = "";
+    dailyTimelineChart.innerHTML = `<div class="empty-state">沒有足夠的日級資料可繪製。</div>`;
+    return;
+  }
+
+  dailyTimelineState = {
+    timeline,
+    participants,
+    startIndex: 0,
+    endIndex: timeline.length - 1,
+  };
+
+  renderDailyTimelineControls();
+  renderDailyTimelineChart();
+}
+
+function renderDailyTimelineControls() {
+  if (!dailyTimelineState) {
+    dailyTimelineControls.innerHTML = "";
+    return;
+  }
+
+  const selectedStart = dailyTimelineState.timeline[dailyTimelineState.startIndex].label;
+  const selectedEnd = dailyTimelineState.timeline[dailyTimelineState.endIndex].label;
+  const isFullRange =
+    dailyTimelineState.startIndex === 0 &&
+    dailyTimelineState.endIndex === dailyTimelineState.timeline.length - 1;
+  dailyTimelineControls.innerHTML = `
+    <div class="timeline-controls-inner">
+      <p class="timeline-range-label">目前區間 <strong>${selectedStart}</strong> - <strong>${selectedEnd}</strong></p>
+      <p class="timeline-hint">在圖表上按住滑鼠拖曳，放開後就會放大該日期範圍。</p>
+      <button type="button" class="timeline-reset" id="daily-range-reset" ${isFullRange ? "disabled" : ""}>回到全部區間</button>
+    </div>
+  `;
+
+  const resetButton = dailyTimelineControls.querySelector("#daily-range-reset");
+
+  resetButton.addEventListener("click", () => {
+    dailyTimelineState.startIndex = 0;
+    dailyTimelineState.endIndex = dailyTimelineState.timeline.length - 1;
+    renderDailyTimelineControls();
+    renderDailyTimelineChart();
+  });
+}
+
+function renderDailyTimelineChart() {
+  if (!dailyTimelineState) {
+    dailyTimelineChart.innerHTML = `<div class="empty-state">沒有足夠的日級資料可繪製。</div>`;
+    return;
+  }
+
+  const timeline = dailyTimelineState.timeline.slice(
+    dailyTimelineState.startIndex,
+    dailyTimelineState.endIndex + 1,
+  );
+
+  if (!timeline.length) {
+    dailyTimelineChart.innerHTML = `<div class="empty-state">目前選取區間沒有可用資料。</div>`;
+    return;
+  }
+
+  const width = 980;
+  const height = 320;
+  const padding = { top: 18, right: 16, bottom: 52, left: 46 };
+  const innerWidth = width - padding.left - padding.right;
+  const innerHeight = height - padding.top - padding.bottom;
+  const maxTotal = Math.max(...timeline.map((entry) => entry.total), 1);
+  const stepX = timeline.length > 1 ? innerWidth / (timeline.length - 1) : innerWidth;
+  const labelStep = Math.max(1, Math.ceil(timeline.length / 8));
+  const colors = ["#1f7a5c", "#c46d2d", "#325c8a", "#874f96"];
+
+  const yLines = [0, 0.5, 1]
+    .map((ratio) => {
+      const y = padding.top + innerHeight - innerHeight * ratio;
+      const label = Math.round(maxTotal * ratio);
+      return `<g><line x1="${padding.left}" y1="${y}" x2="${width - padding.right}" y2="${y}" stroke="rgba(80,62,42,0.12)" /><text class="axis-text" x="${padding.left - 8}" y="${y + 4}" text-anchor="end">${label}</text></g>`;
+    })
+    .join("");
+
+  const series = dailyTimelineState.participants
+    .map((name, participantIndex) => {
+      const path = timeline
+        .map((entry, index) => {
+          const x = padding.left + stepX * index;
+          const value = entry.byParticipant[name] || 0;
+          const y = padding.top + innerHeight - (value / maxTotal) * innerHeight;
+          return `${index === 0 ? "M" : "L"} ${x} ${y}`;
+        })
+        .join(" ");
+
+      const dots = timeline
+        .map((entry, index) => {
+          const value = entry.byParticipant[name] || 0;
+          const x = padding.left + stepX * index;
+          const y = padding.top + innerHeight - (value / maxTotal) * innerHeight;
+          const tooltip = `${entry.label}\n${name}: ${value.toLocaleString()} 則\n總計: ${entry.total.toLocaleString()} 則`;
+          return `<circle class="has-tooltip" data-tooltip="${escapeAttribute(tooltip)}" cx="${x}" cy="${y}" r="4" fill="${colors[participantIndex % colors.length]}"></circle>`;
+        })
+        .join("");
+
+      return `<g><path d="${path}" fill="none" stroke="${colors[participantIndex % colors.length]}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"></path>${dots}</g>`;
+    })
+    .join("");
+
+  const labels = timeline
+    .map((entry, index) => {
+      if (index % labelStep !== 0 && index !== timeline.length - 1) {
+        return "";
+      }
+      const x = padding.left + stepX * index;
+      return `<text class="axis-text" x="${x}" y="${height - 18}" text-anchor="middle">${entry.label.slice(5)}</text>`;
+    })
+    .join("");
+
+  dailyTimelineChart.innerHTML = `<svg class="svg-chart daily-brush-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="日度訊息趨勢圖">${yLines}${series}${labels}<rect class="brush-selection hidden" x="${padding.left}" y="${padding.top}" width="0" height="${innerHeight}"></rect></svg>`;
+  bindTooltips(dailyTimelineChart);
+  bindDailyTimelineBrush({
+    svg: dailyTimelineChart.querySelector(".daily-brush-chart"),
+    selection: dailyTimelineChart.querySelector(".brush-selection"),
+    padding,
+    innerWidth,
+    innerHeight,
+    visibleCount: timeline.length,
+  });
+}
+
+function bindDailyTimelineBrush({ svg, selection, padding, innerWidth, innerHeight, visibleCount }) {
+  if (!svg || !selection || !dailyTimelineState) {
+    return;
+  }
+
+  let dragStartX = null;
+
+  const clampX = (clientX) => {
+    const bounds = svg.getBoundingClientRect();
+    const relativeX = ((clientX - bounds.left) / bounds.width) * svg.viewBox.baseVal.width;
+    return Math.max(padding.left, Math.min(padding.left + innerWidth, relativeX));
+  };
+
+  const xToVisibleIndex = (x) => {
+    if (visibleCount <= 1) {
+      return 0;
+    }
+    const ratio = (x - padding.left) / innerWidth;
+    return Math.max(0, Math.min(visibleCount - 1, Math.round(ratio * (visibleCount - 1))));
+  };
+
+  const isInsidePlot = (clientX, clientY) => {
+    const bounds = svg.getBoundingClientRect();
+    const x = ((clientX - bounds.left) / bounds.width) * svg.viewBox.baseVal.width;
+    const y = ((clientY - bounds.top) / bounds.height) * svg.viewBox.baseVal.height;
+    return (
+      x >= padding.left &&
+      x <= padding.left + innerWidth &&
+      y >= padding.top &&
+      y <= padding.top + innerHeight
+    );
+  };
+
+  svg.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) {
+      return;
+    }
+    if (!isInsidePlot(event.clientX, event.clientY)) {
+      return;
+    }
+    dragStartX = clampX(event.clientX);
+    selection.classList.remove("hidden");
+    selection.setAttribute("x", String(dragStartX));
+    selection.setAttribute("width", "0");
+    svg.setPointerCapture(event.pointerId);
+  });
+
+  svg.addEventListener("pointermove", (event) => {
+    if (dragStartX === null) {
+      return;
+    }
+    const currentX = clampX(event.clientX);
+    selection.setAttribute("x", String(Math.min(dragStartX, currentX)));
+    selection.setAttribute("width", String(Math.abs(currentX - dragStartX)));
+  });
+
+  svg.addEventListener("pointerup", (event) => {
+    if (dragStartX === null) {
+      return;
+    }
+    const dragEndX = clampX(event.clientX);
+    selection.classList.add("hidden");
+    svg.releasePointerCapture(event.pointerId);
+
+    const startVisibleIndex = xToVisibleIndex(Math.min(dragStartX, dragEndX));
+    const endVisibleIndex = xToVisibleIndex(Math.max(dragStartX, dragEndX));
+    dragStartX = null;
+
+    if (startVisibleIndex === endVisibleIndex) {
+      return;
+    }
+
+    dailyTimelineState.startIndex += startVisibleIndex;
+    dailyTimelineState.endIndex = dailyTimelineState.startIndex + (endVisibleIndex - startVisibleIndex);
+    renderDailyTimelineControls();
+    renderDailyTimelineChart();
+  });
+
+  svg.addEventListener("pointercancel", () => {
+    dragStartX = null;
+    selection.classList.add("hidden");
+  });
+
+  svg.addEventListener("dblclick", () => {
+    dailyTimelineState.startIndex = 0;
+    dailyTimelineState.endIndex = dailyTimelineState.timeline.length - 1;
+    renderDailyTimelineControls();
+    renderDailyTimelineChart();
+  });
 }
 
 function renderReplyHistogram(histogram) {

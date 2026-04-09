@@ -342,6 +342,13 @@ function buildPayload(state) {
         : "",
     },
     timeline: monthlyEntries,
+    dailyTimeline: dailyEntries
+      .sort((left, right) => left.date.localeCompare(right.date))
+      .map((entry) => ({
+        label: entry.date,
+        total: entry.total,
+        byParticipant: entry.byParticipant,
+      })),
     heatmap: state.heatmap,
     replyHistogram: {
       bins: REPLY_BUCKET_LABELS.map((label, index) => ({
