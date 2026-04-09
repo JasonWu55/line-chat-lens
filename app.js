@@ -17,6 +17,7 @@ const daysTable = document.querySelector("#days-table");
 const termsCloud = document.querySelector("#terms-cloud");
 const phrasesPanel = document.querySelector("#phrases-panel");
 const messageMixPanel = document.querySelector("#message-mix-panel");
+const callsPanel = document.querySelector("#calls-panel");
 const peopleTable = document.querySelector("#people-table");
 const summaryCardTemplate = document.querySelector("#summary-card-template");
 const replyInfoButton = document.querySelector("#reply-info-button");
@@ -109,6 +110,7 @@ function handleFile(file) {
   termsCloud.innerHTML = "";
   phrasesPanel.innerHTML = "";
   messageMixPanel.innerHTML = "";
+  callsPanel.innerHTML = "";
   peopleTable.innerHTML = "";
   setProgress(0);
   statusText.textContent = "初始化分析";
@@ -132,6 +134,7 @@ function renderDashboard(payload) {
   renderTerms(payload.topTerms);
   renderCatchphrases(payload.catchphrases);
   renderMessageMix(payload.messageMix);
+  renderCalls(payload.calls);
   renderPeople(payload.people);
 }
 
@@ -671,6 +674,120 @@ function renderMessageMix(messageMix) {
     .join("");
 
   bindTooltips(messageMixPanel);
+}
+
+function renderCalls(calls) {
+  if (!calls || !calls.total) {
+    callsPanel.innerHTML = `<div class="empty-state">這份匯出裡沒有可分析的通話事件。</div>`;
+    return;
+  }
+
+  const summaryCards = [
+    {
+      label: "通話次數",
+      value: calls.total.toLocaleString(),
+      meta: `${calls.connected.toLocaleString()} 次有接通`,
+    },
+    {
+      label: "總通話時長",
+      value: calls.totalDurationLabel,
+      meta: `平均每次 ${calls.avgDurationLabel}`,
+    },
+    {
+      label: "最常發起者",
+      value: calls.topCaller?.name || "N/A",
+      meta: calls.topCaller ? `${calls.topCaller.share}% 通話占比` : "找不到發起者資料",
+    },
+    {
+      label: "最常通話時段",
+      value: calls.topHour?.label || "N/A",
+      meta: calls.topHour ? `${calls.topHour.count.toLocaleString()} 次通話` : "沒有足夠資料",
+    },
+  ]
+    .map(
+      (card) => `<article class="call-summary-card">
+        <p class="summary-label">${card.label}</p>
+        <p class="summary-value">${card.value}</p>
+        <p class="summary-meta">${card.meta}</p>
+      </article>`,
+    )
+    .join("");
+
+  const peopleRows = calls.byParticipant
+    .map(
+      (person) => `<div class="call-row has-tooltip" data-tooltip="${escapeAttribute(`${person.name}\n通話 ${person.count.toLocaleString()} 次\n占比 ${person.share}%\n累計 ${person.durationLabel}`)}">
+        <div class="call-row-meta">
+          <strong>${escapeHtml(person.name)}</strong>
+          <span>${person.count.toLocaleString()} 次 / ${person.durationLabel}</span>
+        </div>
+        <div class="call-row-bar"><span style="width:${person.share}%"></span></div>
+        <div class="call-row-share">${person.share}%</div>
+      </div>`,
+    )
+    .join("");
+
+  const monthRows = calls.byMonth
+    .map(
+      (entry) => `<div class="call-row has-tooltip" data-tooltip="${escapeAttribute(`${entry.label}\n${entry.count.toLocaleString()} 次通話\n累計 ${entry.durationLabel}`)}">
+        <div class="call-row-meta">
+          <strong>${entry.label}</strong>
+          <span>${entry.count.toLocaleString()} 次 / ${entry.durationLabel}</span>
+        </div>
+        <div class="call-row-bar warm"><span style="width:${entry.share}%"></span></div>
+        <div class="call-row-share">${entry.share}%</div>
+      </div>`,
+    )
+    .join("");
+
+  const hourRows = calls.byHour
+    .map(
+      (entry) => `<div class="call-row has-tooltip" data-tooltip="${escapeAttribute(`${entry.label}\n${entry.count.toLocaleString()} 次通話`)}">
+        <div class="call-row-meta">
+          <strong>${entry.label}</strong>
+          <span>${entry.count.toLocaleString()} 次</span>
+        </div>
+        <div class="call-row-bar"><span style="width:${entry.share}%"></span></div>
+        <div class="call-row-share">${entry.share}%</div>
+      </div>`,
+    )
+    .join("");
+
+  const outcomeChips = calls.outcomes
+    .map(
+      (entry) => `<div class="call-row has-tooltip" data-tooltip="${escapeAttribute(`${entry.label}\n${entry.count.toLocaleString()} 次\n占比 ${entry.share}%`)}">
+        <div class="call-row-meta">
+          <strong>${escapeHtml(entry.label)}</strong>
+          <span>${entry.count.toLocaleString()} 次</span>
+        </div>
+        <div class="call-row-bar warm"><span style="width:${entry.share}%"></span></div>
+        <div class="call-row-share">${entry.share}%</div>
+      </div>`,
+    )
+    .join("");
+
+  callsPanel.innerHTML = `
+    <div class="call-summary-grid">${summaryCards}</div>
+    <div class="call-grid">
+      <section class="call-block">
+        <p class="phrase-label">誰比較常發起通話</p>
+        <div class="call-list">${peopleRows}</div>
+      </section>
+      <section class="call-block">
+        <p class="phrase-label">通話集中月份</p>
+        <div class="call-list">${monthRows}</div>
+      </section>
+      <section class="call-block">
+        <p class="phrase-label">通話時段分布</p>
+        <div class="call-list">${hourRows}</div>
+      </section>
+      <section class="call-block">
+        <p class="phrase-label">通話結果</p>
+        <div class="call-list">${outcomeChips || `<span class="table-muted">沒有足夠資料。</span>`}</div>
+      </section>
+    </div>
+  `;
+
+  bindTooltips(callsPanel);
 }
 
 function formatBytes(bytes) {

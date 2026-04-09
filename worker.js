@@ -201,6 +201,7 @@ function createState() {
     monthly: new Map(),
     heatmap: Array.from({ length: 7 }, () => Array(24).fill(0)),
     replyBuckets: Array(REPLY_BUCKET_LABELS.length).fill(0),
+    calls: [],
     lastMessage: null,
     longestGap: null,
     heavyTerms: new Map(),
@@ -209,13 +210,18 @@ function createState() {
 }
 
 function processMessageObject(message, state) {
-  if (message.type !== "message") {
+  const sender = resolveSender(message);
+  const timestamp = parseTimestamp(message.date);
+  if (!Number.isFinite(timestamp)) {
     return;
   }
 
-  const sender = message.from || "Unknown";
-  const timestamp = parseTimestamp(message.date);
-  if (!Number.isFinite(timestamp)) {
+  if (isPhoneCallEvent(message)) {
+    processPhoneCall(message, state, sender, timestamp);
+    return;
+  }
+
+  if (message.type !== "message") {
     return;
   }
 
@@ -284,6 +290,25 @@ function processMessageObject(message, state) {
   }
 
   state.lastMessage = { sender, timestamp };
+}
+
+function resolveSender(message) {
+  const candidates = [
+    message.from,
+    message.actor,
+    message.member_id,
+    message.from_id,
+    message.actor_id,
+    message.user_id,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  return "Unknown";
 }
 
 function finalizeState(_state) {}
@@ -365,8 +390,22 @@ function buildPayload(state) {
       .slice(0, 24),
     catchphrases: buildCatchphrasePayload(state.catchphraseStats, state.totalMessages),
     messageMix: buildMessageMixPayload(participants, state.participants),
+    calls: buildCallsPayload(state.calls),
     people: participants,
   };
+}
+
+function isPhoneCallEvent(message) {
+  return message.action === "phone_call" || message.type === "phone_call";
+}
+
+function processPhoneCall(message, state, sender, timestamp) {
+  state.calls.push({
+    sender,
+    timestamp,
+    durationSeconds: extractCallDurationSeconds(message),
+    outcome: getCallOutcomeLabel(message),
+  });
 }
 
 function parseTimestamp(value) {
@@ -633,6 +672,154 @@ function buildMessageMixPayload(participants, participantMap) {
       categories,
     };
   });
+}
+
+function buildCallsPayload(calls) {
+  if (!calls.length) {
+    return {
+      total: 0,
+      connected: 0,
+      totalDurationLabel: "0 分",
+      avgDurationLabel: "0 分",
+      byParticipant: [],
+      byMonth: [],
+      byHour: [],
+      outcomes: [],
+      topCaller: null,
+      topHour: null,
+    };
+  }
+
+  const byParticipant = new Map();
+  const byMonth = new Map();
+  const byHour = Array.from({ length: 24 }, (_, hour) => ({
+    label: `${String(hour).padStart(2, "0")}:00`,
+    count: 0,
+  }));
+  const outcomes = new Map();
+  let connected = 0;
+  let totalDurationSeconds = 0;
+
+  for (const call of calls) {
+    const date = new Date(call.timestamp);
+    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    const hour = date.getHours();
+    const participant = byParticipant.get(call.sender) || { name: call.sender, count: 0, durationSeconds: 0 };
+
+    participant.count += 1;
+    participant.durationSeconds += call.durationSeconds;
+    byParticipant.set(call.sender, participant);
+
+    const month = byMonth.get(monthKey) || { label: monthKey, count: 0, durationSeconds: 0 };
+    month.count += 1;
+    month.durationSeconds += call.durationSeconds;
+    byMonth.set(monthKey, month);
+
+    byHour[hour].count += 1;
+    outcomes.set(call.outcome, (outcomes.get(call.outcome) || 0) + 1);
+
+    if (call.durationSeconds > 0) {
+      connected += 1;
+      totalDurationSeconds += call.durationSeconds;
+    }
+  }
+
+  const total = calls.length;
+  const topCallerEntry = [...byParticipant.values()].sort((left, right) => right.count - left.count)[0] || null;
+  const topHourEntry = [...byHour].sort((left, right) => right.count - left.count)[0] || null;
+
+  return {
+    total,
+    connected,
+    totalDurationLabel: formatCallDuration(totalDurationSeconds),
+    avgDurationLabel: formatCallDuration(connected ? Math.round(totalDurationSeconds / connected) : 0),
+    byParticipant: [...byParticipant.values()]
+      .sort((left, right) => right.count - left.count)
+      .map((entry) => ({
+        ...entry,
+        share: ((entry.count / total) * 100).toFixed(1),
+        durationLabel: formatCallDuration(entry.durationSeconds),
+      })),
+    byMonth: [...byMonth.values()]
+      .sort((left, right) => left.label.localeCompare(right.label))
+      .map((entry) => ({
+        ...entry,
+        share: ((entry.count / total) * 100).toFixed(1),
+        durationLabel: formatCallDuration(entry.durationSeconds),
+      })),
+    byHour: byHour
+      .filter((entry) => entry.count > 0)
+      .sort((left, right) => right.count - left.count)
+      .slice(0, 8)
+      .map((entry) => ({
+        ...entry,
+        share: ((entry.count / total) * 100).toFixed(1),
+      })),
+    outcomes: [...outcomes.entries()]
+      .map(([label, count]) => ({
+        label,
+        count,
+        share: ((count / total) * 100).toFixed(1),
+      }))
+      .sort((left, right) => right.count - left.count),
+    topCaller: topCallerEntry
+      ? {
+          name: topCallerEntry.name,
+          share: ((topCallerEntry.count / total) * 100).toFixed(1),
+        }
+      : null,
+    topHour: topHourEntry
+      ? {
+          label: topHourEntry.label,
+          count: topHourEntry.count,
+        }
+      : null,
+  };
+}
+
+function extractCallDurationSeconds(message) {
+  const duration = Number(message.duration_seconds ?? message.duration ?? 0);
+  return Number.isFinite(duration) && duration > 0 ? duration : 0;
+}
+
+function getCallOutcomeLabel(message) {
+  const reason = String(message.discard_reason || message.reason || "").toLowerCase();
+  if (!reason) {
+    return extractCallDurationSeconds(message) > 0 ? "已接通" : "未知結果";
+  }
+  if (reason.includes("miss")) {
+    return "未接";
+  }
+  if (reason.includes("disconnect") || reason.includes("hangup")) {
+    return "主動掛斷";
+  }
+  if (reason.includes("busy")) {
+    return "忙線";
+  }
+  if (reason.includes("declin")) {
+    return "已拒接";
+  }
+  if (reason.includes("cancel")) {
+    return "已取消";
+  }
+  return reason;
+}
+
+function formatCallDuration(totalSeconds) {
+  if (!totalSeconds) {
+    return "0 分";
+  }
+  if (totalSeconds < 60) {
+    return `${totalSeconds} 秒`;
+  }
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 60) {
+    return seconds ? `${minutes} 分 ${seconds} 秒` : `${minutes} 分`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const remainMinutes = minutes % 60;
+  return remainMinutes ? `${hours} 小時 ${remainMinutes} 分` : `${hours} 小時`;
 }
 
 function buildRangeLabel(first, last) {

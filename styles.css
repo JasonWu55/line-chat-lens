@@ -623,6 +623,77 @@ code {
   gap: 16px;
 }
 
+.calls-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.call-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.call-summary-card,
+.call-block {
+  padding: 18px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.46);
+  border: 1px solid rgba(80, 62, 42, 0.08);
+}
+
+.call-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.call-list {
+  display: grid;
+  gap: 12px;
+}
+
+.call-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.2fr) minmax(0, 1fr) 56px;
+  gap: 12px;
+  align-items: center;
+}
+
+.call-row-meta strong,
+.call-row-meta span,
+.call-row-share {
+  display: block;
+}
+
+.call-row-meta span,
+.call-row-share {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.call-row-bar {
+  overflow: hidden;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(31, 122, 92, 0.1);
+}
+
+.call-row-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-warm) 100%);
+}
+
+.call-row-bar.warm {
+  background: rgba(196, 109, 45, 0.12);
+}
+
+.call-row-bar.warm > span {
+  background: linear-gradient(90deg, #c46d2d 0%, #e09e62 100%);
+}
+
 .mix-card {
   padding: 18px;
   border-radius: 20px;
@@ -729,7 +800,9 @@ code {
   .guide-steps,
   .chart-grid,
   .phrases-panel,
-  .message-mix-panel {
+  .message-mix-panel,
+  .call-grid,
+  .call-summary-grid {
     grid-template-columns: 1fr;
   }
 
