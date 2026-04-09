@@ -1,0 +1,29 @@
+# OS / filesystem
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+.codex
+
+# Local preview / logs
+*.log
+
+# Python local server / caches
+__pycache__/
+*.pyc
+
+# Node local tooling
+node_modules/
+
+# Telegram export data
+result.json
+exports/
+tmp/
+
+# Large local assets that may contain private chat exports
+*.zip
+*.7z
+*.tar
+*.tar.gz
