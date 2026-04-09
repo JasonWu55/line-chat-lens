@@ -473,6 +473,50 @@ code {
   pointer-events: none;
 }
 
+.reply-breakdown {
+  margin-top: 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.reply-breakdown-head {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.reply-breakdown-row {
+  display: grid;
+  grid-template-columns: minmax(72px, 96px) minmax(0, 1fr) 56px;
+  gap: 12px;
+  align-items: center;
+}
+
+.reply-breakdown-meta strong,
+.reply-breakdown-meta span,
+.reply-breakdown-share {
+  display: block;
+}
+
+.reply-breakdown-meta span,
+.reply-breakdown-share {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.reply-breakdown-bar {
+  overflow: hidden;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(196, 109, 45, 0.12);
+}
+
+.reply-breakdown-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #c46d2d 0%, #e09e62 100%);
+}
+
 .table-block {
   display: grid;
   gap: 10px;

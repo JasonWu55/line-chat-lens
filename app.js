@@ -511,33 +511,28 @@ function renderReplyHistogram(histogram) {
     return;
   }
 
-  const width = 520;
-  const height = 280;
-  const padding = { top: 20, right: 12, bottom: 42, left: 42 };
-  const innerWidth = width - padding.left - padding.right;
-  const innerHeight = height - padding.top - padding.bottom;
-  const maxValue = Math.max(...histogram.bins.map((bin) => bin.count), 1);
-  const barWidth = innerWidth / histogram.bins.length;
-
-  const bars = histogram.bins
-    .map((bin, index) => {
-      const barHeight = (bin.count / maxValue) * innerHeight;
-      const x = padding.left + index * barWidth + 3;
-      const y = padding.top + innerHeight - barHeight;
-      const tooltip = `${bin.label}\n${bin.count.toLocaleString()} 次交替回覆`;
-      return `<g><rect class="has-tooltip" data-tooltip="${escapeAttribute(tooltip)}" x="${x}" y="${y}" width="${Math.max(barWidth - 6, 4)}" height="${barHeight}" rx="8" fill="#c46d2d"></rect><text class="axis-text" x="${x + (barWidth - 6) / 2}" y="${height - 18}" text-anchor="middle">${bin.label}</text></g>`;
+  const totalReplies = histogram.bins.reduce((sum, bin) => sum + bin.count, 0);
+  const breakdown = histogram.bins
+    .map((bin) => {
+      const share = totalReplies ? ((bin.count / totalReplies) * 100).toFixed(1) : "0.0";
+      const tooltip = `${bin.label}\n${bin.count.toLocaleString()} 次交替回覆\n占比 ${share}%`;
+      return `<div class="reply-breakdown-row has-tooltip" data-tooltip="${escapeAttribute(tooltip)}">
+        <div class="reply-breakdown-meta">
+          <strong>${bin.label}</strong>
+          <span>${bin.count.toLocaleString()} 次</span>
+        </div>
+        <div class="reply-breakdown-bar"><span style="width:${share}%"></span></div>
+        <div class="reply-breakdown-share">${share}%</div>
+      </div>`;
     })
     .join("");
 
-  const yLines = [0, 0.5, 1]
-    .map((ratio) => {
-      const y = padding.top + innerHeight - innerHeight * ratio;
-      const label = Math.round(maxValue * ratio);
-      return `<g><line x1="${padding.left}" y1="${y}" x2="${width - padding.right}" y2="${y}" stroke="rgba(80,62,42,0.12)" /><text class="axis-text" x="${padding.left - 8}" y="${y + 4}" text-anchor="end">${label}</text></g>`;
-    })
-    .join("");
-
-  replyChart.innerHTML = `<svg class="svg-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="回覆速度分布圖">${yLines}${bars}</svg>`;
+  replyChart.innerHTML = `
+    <div class="reply-breakdown">
+      <div class="reply-breakdown-head">各區間占比</div>
+      ${breakdown}
+    </div>
+  `;
   bindTooltips(replyChart);
 }
 
