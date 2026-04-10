@@ -63,6 +63,54 @@ const STOPWORDS = new Set([
   "不是",
   "一個",
 ]);
+const HAN_SEGMENT_BOUNDARIES = new Set([
+  "的",
+  "了",
+  "是",
+  "在",
+  "有",
+  "和",
+  "跟",
+  "與",
+  "及",
+  "或",
+  "被",
+  "把",
+  "讓",
+  "給",
+  "到",
+  "向",
+  "對",
+  "比",
+  "就",
+  "才",
+  "又",
+  "再",
+  "還",
+  "都",
+  "也",
+  "很",
+  "太",
+  "更",
+  "最",
+  "嗎",
+  "啊",
+  "吧",
+  "啦",
+  "喔",
+  "欸",
+  "嗯",
+  "嘛",
+  "呢",
+  "哦",
+  "嘿",
+  "呀",
+  "我",
+  "你",
+  "他",
+  "她",
+  "它",
+]);
 const PHRASE_STOPWORDS = new Set(["哈哈", "晚安", "早安", "貼圖", "圖片"]);
 const MESSAGE_TYPE_LABELS = {
   text: "文字",
@@ -790,24 +838,7 @@ function addReplyDelay(state, delay) {
 function updateHeavyTerms(heavyTerms, text) {
   const tokens = extractTermTokens(text);
   for (const token of tokens) {
-    if (STOPWORDS.has(token)) {
-      continue;
-    }
-    if (heavyTerms.has(token)) {
-      heavyTerms.set(token, heavyTerms.get(token) + 1);
-      continue;
-    }
-    if (heavyTerms.size < 160) {
-      heavyTerms.set(token, 1);
-      continue;
-    }
-    for (const [key, count] of heavyTerms.entries()) {
-      if (count <= 1) {
-        heavyTerms.delete(key);
-      } else {
-        heavyTerms.set(key, count - 1);
-      }
-    }
+    recordCount(heavyTerms, token);
   }
 }
 
@@ -825,36 +856,33 @@ function updateParticipantLanguage(catchphraseStats, sender, text) {
   person.messages += 1;
 
   for (const token of extractTermTokens(text)) {
-    if (STOPWORDS.has(token)) {
-      continue;
-    }
-    incrementHeavyHitters(person.words, token, 96);
+    recordCount(person.words, token);
   }
 
   for (const phrase of extractPhraseCandidates(text)) {
-    incrementHeavyHitters(person.phrases, phrase, 64);
+    recordCount(person.phrases, phrase);
   }
 }
 
 function extractTermTokens(text) {
-  const normalized = text.toLowerCase().replace(/https?:\/\/\S+/g, " ").replace(/\s+/g, " ").trim();
+  const normalized = text
+    .toLowerCase()
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/[_~!！?？,，.。:：;；、/|()[\]{}"'`<>#%^&*+=\\\n\r\t-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   const tokens = normalized.match(/[a-z0-9_-]{2,}|[\p{Script=Han}]{2,}/gu) || [];
   const output = [];
 
   for (const token of tokens) {
     if (/^[\p{Script=Han}]+$/u.test(token)) {
-      if (token.length <= 4) {
-        output.push(token);
-        continue;
-      }
-
-      for (let index = 0; index < token.length - 1; index += 1) {
-        output.push(token.slice(index, index + 2));
-      }
+      output.push(...extractHanTermCandidates(token));
       continue;
     }
 
-    output.push(token);
+    if (!STOPWORDS.has(token)) {
+      output.push(token);
+    }
   }
 
   return output;
@@ -890,22 +918,79 @@ function extractPhraseCandidates(text) {
   return phrases;
 }
 
-function incrementHeavyHitters(map, key, limit) {
-  if (map.has(key)) {
-    map.set(key, map.get(key) + 1);
-    return;
-  }
-  if (map.size < limit) {
-    map.set(key, 1);
-    return;
-  }
-  for (const [entry, count] of map.entries()) {
-    if (count <= 1) {
-      map.delete(entry);
-    } else {
-      map.set(entry, count - 1);
+function extractHanTermCandidates(chunk) {
+  const segments = splitHanSegments(chunk);
+  const output = [];
+
+  for (const segment of segments) {
+    if (segment.length < 2) {
+      continue;
+    }
+
+    if (segment.length <= 4) {
+      if (!STOPWORDS.has(segment)) {
+        output.push(segment);
+      }
+      continue;
+    }
+
+    for (const size of [3, 2]) {
+      if (segment.length < size) {
+        continue;
+      }
+      for (let index = 0; index <= segment.length - size; index += 1) {
+        const candidate = segment.slice(index, index + size);
+        if (STOPWORDS.has(candidate) || isNoisyHanCandidate(candidate)) {
+          continue;
+        }
+        output.push(candidate);
+      }
     }
   }
+
+  return output;
+}
+
+function splitHanSegments(chunk) {
+  const segments = [];
+  let current = "";
+
+  for (const char of chunk) {
+    if (HAN_SEGMENT_BOUNDARIES.has(char)) {
+      if (current.length) {
+        segments.push(current);
+        current = "";
+      }
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (current.length) {
+    segments.push(current);
+  }
+
+  return segments;
+}
+
+function isNoisyHanCandidate(candidate) {
+  if (candidate.length < 2) {
+    return true;
+  }
+
+  if (/^(.)\1+$/u.test(candidate)) {
+    return true;
+  }
+
+  return false;
+}
+
+function recordCount(map, key) {
+  if (!key) {
+    return;
+  }
+  map.set(key, (map.get(key) || 0) + 1);
 }
 
 function buildCatchphrasePayload(catchphraseStats, totalMessages) {
