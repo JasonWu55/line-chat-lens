@@ -643,7 +643,7 @@ function renderTerms(topTerms) {
   termsCloud.innerHTML = topTerms
     .map((term) => {
       const emphasis = 0.9 + (term.count / maxCount) * 0.7;
-      return `<span class="term-chip has-tooltip" data-tooltip="${escapeAttribute(`${term.term}\n約出現 ${term.count.toLocaleString()} 次`)}" style="font-size:${emphasis}rem"><strong>${escapeHtml(term.term)}</strong>${term.count}</span>`;
+      return `<span class="term-chip has-tooltip" data-tooltip="${escapeAttribute(`${term.term}\n近似熱度 ${term.count.toLocaleString()}`)}" style="font-size:${emphasis}rem"><strong>${escapeHtml(term.term)}</strong>${term.count}</span>`;
     })
     .join("");
   bindTooltips(termsCloud);
@@ -752,7 +752,7 @@ function renderCatchphrases(catchphrases) {
         ? person.topWords
             .map(
               (entry) =>
-                `<span class="phrase-chip has-tooltip" data-tooltip="${escapeAttribute(`${entry.term}\n${person.name} 約用了 ${entry.count.toLocaleString()} 次`)}"><strong>${escapeHtml(entry.term)}</strong>${entry.count}</span>`,
+                `<span class="phrase-chip has-tooltip" data-tooltip="${escapeAttribute(`${entry.term}\n${person.name} 的近似頻度 ${entry.count.toLocaleString()}`)}"><strong>${escapeHtml(entry.term)}</strong>${entry.count}</span>`,
             )
             .join("")
         : `<span class="table-muted">沒有足夠的高頻詞。</span>`;
@@ -761,7 +761,7 @@ function renderCatchphrases(catchphrases) {
         ? person.topPhrases
             .map(
               (entry) =>
-                `<span class="phrase-chip warm has-tooltip" data-tooltip="${escapeAttribute(`${entry.term}\n${person.name} 約重複了 ${entry.count.toLocaleString()} 次`)}">「${escapeHtml(entry.term)}」<strong>${entry.count}</strong></span>`,
+                `<span class="phrase-chip warm has-tooltip" data-tooltip="${escapeAttribute(`${entry.term}\n${person.name} 的重複傾向分數 ${entry.count.toLocaleString()}`)}">「${escapeHtml(entry.term)}」<strong>${entry.count}</strong></span>`,
             )
             .join("")
         : `<span class="table-muted">沒有明顯重複短句。</span>`;
