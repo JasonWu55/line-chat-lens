@@ -203,6 +203,11 @@ function createState() {
     chatName: "",
     totalMessages: 0,
     textMessages: 0,
+    editedMessages: 0,
+    forwardedMessages: 0,
+    linkedMessages: 0,
+    reactedMessages: 0,
+    totalReactionCount: 0,
     firstTimestamp: null,
     lastTimestamp: null,
     participants: new Map(),
@@ -218,6 +223,7 @@ function createState() {
     longestGap: null,
     heavyTerms: new Map(),
     catchphraseStats: new Map(),
+    reactionTypes: new Map(),
   };
 }
 
@@ -258,6 +264,41 @@ function processMessageObject(message, state) {
   const person = getOrCreateParticipant(state.participants, sender);
   person.messages += 1;
   person.characters += trimmedText.length;
+
+  if (message.forwarded_from) {
+    state.forwardedMessages += 1;
+    person.forwards += 1;
+  }
+
+  if (message.edited || message.edited_unixtime) {
+    state.editedMessages += 1;
+    person.edits += 1;
+  }
+
+  if (
+    message.text_entities &&
+    message.text_entities.some((entity) => entity.type === "link" || entity.type === "text_link")
+  ) {
+    state.linkedMessages += 1;
+    person.links += 1;
+  }
+
+  if (message.reactions && Array.isArray(message.reactions)) {
+    let reactionCountForMessage = 0;
+    for (const reaction of message.reactions) {
+      const reactionKey = resolveReactionKey(reaction);
+      if (reactionKey) {
+        reactionCountForMessage += reaction.count || 0;
+        recordReaction(state.reactionTypes, reactionKey, reaction.count || 0);
+        recordReaction(person.reactionsReceived, reactionKey, reaction.count || 0);
+      }
+    }
+    if (reactionCountForMessage > 0) {
+      state.reactedMessages += 1;
+      state.totalReactionCount += reactionCountForMessage;
+    }
+  }
+
   if (hasMedia) {
     person.mediaMessages += 1;
   }
@@ -280,19 +321,19 @@ function processMessageObject(message, state) {
     updateParticipantLanguage(state.catchphraseStats, sender, trimmedText);
   }
 
-  if (state.lastMessage && state.lastMessage.sender !== sender) {
-    const delay = timestamp - state.lastMessage.timestamp;
-    if (delay >= 0) {
-      addReplyDelay(state, delay);
-      if (delay < 30 * 60_000) {
-        state.immediateReplyDelays.push(delay);
-      } else {
-        state.restartReplyDelays.push(delay);
+  if (state.lastMessage) {
+    if (state.lastMessage.sender !== sender) {
+      const delay = timestamp - state.lastMessage.timestamp;
+      if (delay >= 0) {
+        addReplyDelay(state, delay);
+        if (delay < 30 * 60_000) {
+          state.immediateReplyDelays.push(delay);
+        } else {
+          state.restartReplyDelays.push(delay);
+        }
       }
     }
-  }
 
-  if (state.lastMessage) {
     const gap = timestamp - state.lastMessage.timestamp;
     if (
       gap >= 0 &&
@@ -339,6 +380,12 @@ function buildPayload(state) {
       characters: stats.characters,
       avgChars: stats.messages ? stats.characters / stats.messages : 0,
       mediaShare: stats.messages ? ((stats.mediaMessages / stats.messages) * 100).toFixed(1) : "0.0",
+      edits: stats.edits,
+      forwards: stats.forwards,
+      links: stats.links,
+      editRatio: stats.messages ? ((stats.edits / stats.messages) * 100).toFixed(1) : "0.0",
+      reactionCountReceived: sumMapValues(stats.reactionsReceived),
+      reactionsReceived: buildReactionPayload(stats.reactionsReceived, 4),
     }))
     .sort((left, right) => right.messages - left.messages);
 
@@ -372,6 +419,11 @@ function buildPayload(state) {
     summary: {
       totalMessages: state.totalMessages,
       textMessages: state.textMessages,
+      editedMessages: state.editedMessages,
+      forwardedMessages: state.forwardedMessages,
+      linkedMessages: state.linkedMessages,
+      reactedMessages: state.reactedMessages,
+      totalReactionCount: state.totalReactionCount,
       activeDays,
       spanDays,
       rangeLabel: buildRangeLabel(state.firstTimestamp, state.lastTimestamp),
@@ -428,6 +480,7 @@ function buildPayload(state) {
     messageMix: buildMessageMixPayload(participants, state.participants),
     calls: buildCallsPayload(state.calls),
     people: participants,
+    topReactions: buildReactionPayload(state.reactionTypes, 10),
   };
 }
 
@@ -655,10 +708,64 @@ function getOrCreateParticipant(participants, name) {
       characters: 0,
       mediaMessages: 0,
       messageTypes: new Map(),
+      edits: 0,
+      forwards: 0,
+      links: 0,
+      reactionsReceived: new Map(),
     };
     participants.set(name, participant);
   }
   return participant;
+}
+
+function resolveReactionKey(reaction) {
+  if (!reaction || typeof reaction !== "object") {
+    return null;
+  }
+
+  if (reaction.type === "emoji" && typeof reaction.emoji === "string" && reaction.emoji.trim()) {
+    return `emoji:${reaction.emoji.trim()}`;
+  }
+
+  if (reaction.type === "custom_emoji") {
+    return "custom";
+  }
+
+  return null;
+}
+
+function recordReaction(map, key, count) {
+  if (!key || !Number.isFinite(count) || count <= 0) {
+    return;
+  }
+  map.set(key, (map.get(key) || 0) + count);
+}
+
+function formatReactionLabel(key) {
+  if (key.startsWith("emoji:")) {
+    return key.slice(6);
+  }
+  return "Custom Emoji";
+}
+
+function buildReactionPayload(map, limit) {
+  return [...map.entries()]
+    .map(([key, count]) => ({
+      key,
+      label: formatReactionLabel(key),
+      count,
+      kind: key.startsWith("emoji:") ? "emoji" : "custom",
+    }))
+    .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label))
+    .slice(0, limit);
+}
+
+function sumMapValues(map) {
+  let total = 0;
+  for (const value of map.values()) {
+    total += value;
+  }
+  return total;
 }
 
 function incrementMessageType(messageTypes, type) {

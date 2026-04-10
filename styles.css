@@ -634,6 +634,10 @@ code {
   color: var(--muted);
 }
 
+.table-row.table-row-wide {
+  grid-template-columns: minmax(120px, 1.1fr) repeat(4, minmax(0, 1fr));
+}
+
 .table-cell strong {
   display: block;
   font-size: 1rem;
@@ -721,6 +725,12 @@ code {
 .calls-panel {
   display: grid;
   gap: 16px;
+}
+
+.signals-panel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
 }
 
 .call-summary-grid {
@@ -897,6 +907,7 @@ code {
   .chart-grid,
   .phrases-panel,
   .message-mix-panel,
+  .signals-panel,
   .call-grid,
   .call-summary-grid {
     grid-template-columns: 1fr;
@@ -947,6 +958,10 @@ code {
     grid-template-columns: 1fr 1fr;
   }
 
+  .table-row.table-row-wide {
+    grid-template-columns: 1fr 1fr;
+  }
+
   .guide-figure img {
     max-height: 280px;
   }
@@ -958,6 +973,10 @@ code {
   }
 
   .table-row {
+    grid-template-columns: 1fr;
+  }
+
+  .table-row.table-row-wide {
     grid-template-columns: 1fr;
   }
 }

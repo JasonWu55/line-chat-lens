@@ -19,6 +19,8 @@ const termsCloud = document.querySelector("#terms-cloud");
 const phrasesPanel = document.querySelector("#phrases-panel");
 const messageMixPanel = document.querySelector("#message-mix-panel");
 const callsPanel = document.querySelector("#calls-panel");
+const signalsPanel = document.querySelector("#signals-panel");
+const reactionsPanel = document.querySelector("#reactions-panel");
 const peopleTable = document.querySelector("#people-table");
 const summaryCardTemplate = document.querySelector("#summary-card-template");
 const replyInfoButton = document.querySelector("#reply-info-button");
@@ -113,6 +115,8 @@ function handleFile(file) {
   phrasesPanel.innerHTML = "";
   messageMixPanel.innerHTML = "";
   callsPanel.innerHTML = "";
+  signalsPanel.innerHTML = "";
+  reactionsPanel.innerHTML = "";
   peopleTable.innerHTML = "";
   setProgress(0);
   statusText.textContent = "初始化分析";
@@ -138,6 +142,8 @@ function renderDashboard(payload) {
   renderCatchphrases(payload.catchphrases);
   renderMessageMix(payload.messageMix);
   renderCalls(payload.calls);
+  renderSignals(payload.summary);
+  renderTopReactions(payload.topReactions, payload.summary.totalReactionCount);
   renderPeople(payload.people);
 }
 
@@ -643,6 +649,67 @@ function renderTerms(topTerms) {
   bindTooltips(termsCloud);
 }
 
+function renderSignals(summary) {
+  const cards = [
+    {
+      label: "編輯訊息",
+      value: summary.editedMessages.toLocaleString(),
+      meta: `${formatShare(summary.editedMessages, summary.totalMessages)} 的訊息曾被編輯`,
+    },
+    {
+      label: "轉傳訊息",
+      value: summary.forwardedMessages.toLocaleString(),
+      meta: `${formatShare(summary.forwardedMessages, summary.totalMessages)} 的訊息是轉傳內容`,
+    },
+    {
+      label: "附連結訊息",
+      value: summary.linkedMessages.toLocaleString(),
+      meta: `${formatShare(summary.linkedMessages, summary.totalMessages)} 的訊息含外部連結`,
+    },
+    {
+      label: "收到反應",
+      value: summary.totalReactionCount.toLocaleString(),
+      meta: summary.reactedMessages
+        ? `${summary.reactedMessages.toLocaleString()} 則訊息收到至少一個反應`
+        : "目前沒有任何訊息收到反應",
+    },
+  ];
+
+  signalsPanel.innerHTML = cards
+    .map(
+      (card) => `<article class="call-summary-card">
+        <p class="summary-label">${card.label}</p>
+        <p class="summary-value">${card.value}</p>
+        <p class="summary-meta">${card.meta}</p>
+      </article>`,
+    )
+    .join("");
+}
+
+function renderTopReactions(topReactions, totalReactionCount) {
+  if (!topReactions.length) {
+    reactionsPanel.innerHTML = `<div class="empty-state">這份匯出裡沒有任何表情反應。</div>`;
+    return;
+  }
+
+  reactionsPanel.innerHTML = topReactions
+    .map((reaction) => {
+      const share = totalReactionCount ? ((reaction.count / totalReactionCount) * 100).toFixed(1) : "0.0";
+      const tooltip = `${reaction.label}\n${reaction.count.toLocaleString()} 次反應\n占比 ${share}%`;
+      return `<div class="call-row has-tooltip" data-tooltip="${escapeAttribute(tooltip)}">
+        <div class="call-row-meta">
+          <strong>${escapeHtml(reaction.label)}</strong>
+          <span>${reaction.kind === "custom" ? "自訂表情" : "一般表情"}</span>
+        </div>
+        <div class="call-row-bar warm"><span style="width:${share}%"></span></div>
+        <div class="call-row-share">${share}%</div>
+      </div>`;
+    })
+    .join("");
+
+  bindTooltips(reactionsPanel);
+}
+
 function renderPeople(people) {
   if (!people.length) {
     peopleTable.innerHTML = `<div class="empty-state">沒有參與者統計。</div>`;
@@ -651,11 +718,23 @@ function renderPeople(people) {
 
   const maxMessages = Math.max(...people.map((person) => person.messages), 1);
   peopleTable.innerHTML = [
-    `<div class="table-row header"><div>參與者</div><div>訊息數</div><div>平均字數</div><div>媒體訊息占比</div></div>`,
+    `<div class="table-row table-row-wide header"><div>參與者</div><div>訊息數</div><div>平均字數</div><div>媒體訊息占比</div><div>互動訊號</div></div>`,
     ...people.map((person) => {
       const share = ((person.messages / maxMessages) * 100).toFixed(1);
-      const tooltip = `${person.name}\n訊息數: ${person.messages.toLocaleString()} 則\n總字元: ${person.characters.toLocaleString()}\n平均字數: ${person.avgChars.toFixed(1)}\n媒體訊息占比: ${person.mediaShare}%`;
-      return `<div class="table-row has-tooltip" data-tooltip="${escapeAttribute(tooltip)}"><div class="table-cell"><strong>${escapeHtml(person.name)}</strong><span class="table-muted">${person.characters.toLocaleString()} 字元</span></div><div class="table-cell"><strong>${person.messages.toLocaleString()}</strong><div class="mini-bar"><span style="width:${share}%"></span></div></div><div class="table-cell">${person.avgChars.toFixed(1)}</div><div class="table-cell">${person.mediaShare}%</div></div>`;
+      const topReactionLine = person.reactionsReceived.length
+        ? `收到反應: ${person.reactionCountReceived.toLocaleString()} 次\n最常見: ${person.reactionsReceived
+            .slice(0, 3)
+            .map((reaction) => `${reaction.label} ${reaction.count}`)
+            .join(" / ")}`
+        : "收到反應: 0 次";
+      const tooltip = `${person.name}\n訊息數: ${person.messages.toLocaleString()} 則\n總字元: ${person.characters.toLocaleString()}\n平均字數: ${person.avgChars.toFixed(1)}\n媒體訊息占比: ${person.mediaShare}%\n編輯訊息: ${person.edits.toLocaleString()} 則\n轉傳訊息: ${person.forwards.toLocaleString()} 則\n附連結訊息: ${person.links.toLocaleString()} 則\n${topReactionLine}`;
+      const signalSummary = [
+        `編輯 ${person.edits}`,
+        `轉傳 ${person.forwards}`,
+        `連結 ${person.links}`,
+        `反應 ${person.reactionCountReceived}`,
+      ].join(" / ");
+      return `<div class="table-row table-row-wide has-tooltip" data-tooltip="${escapeAttribute(tooltip)}"><div class="table-cell"><strong>${escapeHtml(person.name)}</strong><span class="table-muted">${person.characters.toLocaleString()} 字元</span></div><div class="table-cell"><strong>${person.messages.toLocaleString()}</strong><div class="mini-bar"><span style="width:${share}%"></span></div></div><div class="table-cell">${person.avgChars.toFixed(1)}</div><div class="table-cell">${person.mediaShare}%</div><div class="table-cell">${signalSummary}</div></div>`;
     }),
   ].join("");
   bindTooltips(peopleTable);
@@ -872,6 +951,13 @@ function formatCompact(value) {
     notation: value >= 10000 ? "compact" : "standard",
     maximumFractionDigits: 1,
   }).format(value);
+}
+
+function formatShare(part, total) {
+  if (!total) {
+    return "0.0%";
+  }
+  return `${((part / total) * 100).toFixed(1)}%`;
 }
 
 function escapeHtml(input) {
