@@ -166,24 +166,24 @@ function renderSummary(summary) {
       meta: `${summary.activeDays.toLocaleString()} 個活躍日`,
     },
     {
-      label: "平均每日",
-      value: summary.avgPerActiveDay,
-      meta: "以有訊息的日期計算",
+      label: "活躍密度",
+      value: summary.activeDensityLabel,
+      meta: summary.activeDensityMeta,
     },
     {
-      label: "最常發話者",
-      value: summary.topSender?.name || "N/A",
-      meta: summary.topSender ? `${summary.topSender.share}% 訊息占比` : "找不到參與者資料",
+      label: "發話平衡",
+      value: summary.balanceLabel,
+      meta: summary.balanceMeta,
     },
     {
-      label: "典型回覆時間",
-      value: summary.medianReplyLabel,
-      meta: `${summary.replyPairs.toLocaleString()} 次交替回覆`,
+      label: "即時回覆節奏",
+      value: summary.immediateReplyLabel,
+      meta: summary.immediateReplyMeta,
     },
     {
-      label: "最長沉默",
-      value: summary.longestGapLabel,
-      meta: summary.longestGapRange || "沒有足夠資料",
+      label: "重啟對話間隔",
+      value: summary.restartReplyLabel,
+      meta: summary.restartReplyMeta,
     },
   ];
 
@@ -533,6 +533,11 @@ function renderReplyHistogram(histogram) {
   replyChart.innerHTML = `
     <div class="reply-breakdown">
       ${breakdown}
+    </div>
+    <div class="reply-side-note">
+      <div class="reply-side-note-label">最長空窗</div>
+      <div class="reply-side-note-value">${histogram.longestGapLabel}</div>
+      <div class="reply-side-note-meta">${histogram.longestGapRange}</div>
     </div>
   `;
   bindTooltips(replyChart);

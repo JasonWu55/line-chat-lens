@@ -517,6 +517,34 @@ code {
   background: linear-gradient(90deg, #c46d2d 0%, #e09e62 100%);
 }
 
+.reply-side-note {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.48);
+  border: 1px solid rgba(80, 62, 42, 0.08);
+}
+
+.reply-side-note-label {
+  color: var(--muted);
+  font-size: 0.82rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.reply-side-note-value {
+  margin-top: 6px;
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.reply-side-note-meta {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
 .table-block {
   display: grid;
   gap: 10px;

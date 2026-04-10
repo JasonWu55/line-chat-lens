@@ -210,6 +210,8 @@ function createState() {
     monthly: new Map(),
     heatmap: Array.from({ length: 7 }, () => Array(24).fill(0)),
     replyBuckets: Array(REPLY_BUCKET_LABELS.length).fill(0),
+    immediateReplyDelays: [],
+    restartReplyDelays: [],
     calls: [],
     lastMessage: null,
     longestGap: null,
@@ -281,6 +283,11 @@ function processMessageObject(message, state) {
     const delay = timestamp - state.lastMessage.timestamp;
     if (delay >= 0) {
       addReplyDelay(state, delay);
+      if (delay < 30 * 60_000) {
+        state.immediateReplyDelays.push(delay);
+      } else {
+        state.restartReplyDelays.push(delay);
+      }
     }
   }
 
@@ -349,31 +356,38 @@ function buildPayload(state) {
     }));
 
   const totalMessages = state.totalMessages || 1;
-  const topSender = participants[0]
-    ? {
-        name: participants[0].name,
-        share: ((participants[0].messages / totalMessages) * 100).toFixed(1),
-      }
-    : null;
-
-  const replyPairs = state.replyBuckets.reduce((sum, count) => sum + count, 0);
-  const medianReply = estimateTypicalReply(state.replyBuckets);
+  const spanDays = calculateSpanDays(state.firstTimestamp, state.lastTimestamp);
+  const activeDays = state.daily.size;
+  const topParticipants = participants.slice(0, 2).map((participant) => ({
+    name: participant.name,
+    share: ((participant.messages / totalMessages) * 100).toFixed(1),
+  }));
+  const immediateReply = quantile(state.immediateReplyDelays, 0.9);
+  const restartReply = quantile(state.restartReplyDelays, 0.5);
 
   return {
     participants: participants.map((participant) => participant.name),
     summary: {
       totalMessages: state.totalMessages,
       textMessages: state.textMessages,
-      activeDays: state.daily.size,
+      activeDays,
+      spanDays,
       rangeLabel: buildRangeLabel(state.firstTimestamp, state.lastTimestamp),
-      avgPerActiveDay: state.daily.size ? (state.totalMessages / state.daily.size).toFixed(1) : "0",
-      topSender,
-      medianReplyLabel: medianReply === null ? "N/A" : formatDuration(medianReply),
-      replyPairs,
-      longestGapLabel: state.longestGap ? formatDuration(state.longestGap.duration) : "N/A",
-      longestGapRange: state.longestGap
-        ? `${formatShortDate(state.longestGap.from)} → ${formatShortDate(state.longestGap.to)}`
-        : "",
+      avgPerActiveDay: activeDays ? (state.totalMessages / activeDays).toFixed(1) : "0",
+      activeDensityLabel: spanDays ? `${((activeDays / spanDays) * 100).toFixed(1)}%` : "N/A",
+      activeDensityMeta: spanDays
+        ? `${activeDays.toLocaleString()} / ${spanDays.toLocaleString()} 天有對話`
+        : "沒有足夠資料",
+      balanceLabel: buildBalanceLabel(topParticipants),
+      balanceMeta: buildBalanceMeta(topParticipants, participants.length),
+      immediateReplyLabel: immediateReply === null ? "N/A" : formatDuration(immediateReply),
+      immediateReplyMeta: state.immediateReplyDelays.length
+        ? `${state.immediateReplyDelays.length.toLocaleString()} 次 30 分內接話的 p90`
+        : "沒有足夠的短間隔回覆",
+      restartReplyLabel: restartReply === null ? "N/A" : formatDuration(restartReply),
+      restartReplyMeta: state.restartReplyDelays.length
+        ? `${state.restartReplyDelays.length.toLocaleString()} 次 30 分後重啟的中位數`
+        : "沒有足夠的重啟對話",
     },
     timeline: monthlyEntries,
     dailyTimeline: dailyEntries
@@ -389,6 +403,10 @@ function buildPayload(state) {
         label,
         count: state.replyBuckets[index],
       })),
+      longestGapLabel: state.longestGap ? formatDuration(state.longestGap.duration) : "N/A",
+      longestGapRange: state.longestGap
+        ? `${formatShortDate(state.longestGap.from)} → ${formatShortDate(state.longestGap.to)}`
+        : "沒有足夠資料",
     },
     topDays: dailyEntries
       .sort((left, right) => right.total - left.total)
@@ -836,7 +854,7 @@ function buildRangeLabel(first, last) {
     return "N/A";
   }
 
-  const days = Math.max(1, Math.round((last - first) / 86_400_000) + 1);
+  const days = calculateSpanDays(first, last);
   if (days >= 365) {
     return `${(days / 365).toFixed(1)} 年`;
   }
@@ -844,6 +862,53 @@ function buildRangeLabel(first, last) {
     return `${(days / 30).toFixed(1)} 月`;
   }
   return `${days} 天`;
+}
+
+function calculateSpanDays(first, last) {
+  if (first === null || last === null) {
+    return 0;
+  }
+
+  return Math.max(1, Math.round((last - first) / 86_400_000) + 1);
+}
+
+function quantile(values, ratio) {
+  if (!values.length) {
+    return null;
+  }
+
+  const sorted = [...values].sort((left, right) => left - right);
+  const index = Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * ratio));
+  return sorted[index];
+}
+
+function buildBalanceLabel(topParticipants) {
+  if (!topParticipants.length) {
+    return "N/A";
+  }
+
+  if (topParticipants.length === 1) {
+    return `${topParticipants[0].share}%`;
+  }
+
+  return `${topParticipants[0].share} / ${topParticipants[1].share}`;
+}
+
+function buildBalanceMeta(topParticipants, participantCount) {
+  if (!topParticipants.length) {
+    return "找不到參與者資料";
+  }
+
+  if (topParticipants.length === 1) {
+    return topParticipants[0].name;
+  }
+
+  const names = `${topParticipants[0].name} vs ${topParticipants[1].name}`;
+  if (participantCount <= 2) {
+    return names;
+  }
+
+  return `${names}（取前兩位）`;
 }
 
 function formatDuration(ms) {
@@ -880,44 +945,6 @@ function formatLocalDate(date) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
-}
-
-function estimateTypicalReply(replyBuckets) {
-  const total = replyBuckets.reduce((sum, count) => sum + count, 0);
-  if (!total) {
-    return null;
-  }
-
-  const midpoint = total / 2;
-  let seen = 0;
-  for (let index = 0; index < replyBuckets.length; index += 1) {
-    seen += replyBuckets[index];
-    if (seen >= midpoint) {
-      return labelToDuration(REPLY_BUCKET_LABELS[index]);
-    }
-  }
-  return null;
-}
-
-function labelToDuration(label) {
-  switch (label) {
-    case "0-5s":
-      return 2_500;
-    case "5-20s":
-      return 12_500;
-    case "20-60s":
-      return 40_000;
-    case "1-5m":
-      return 3 * 60_000;
-    case "5-30m":
-      return 17.5 * 60_000;
-    case "30m-6h":
-      return 3.25 * 3_600_000;
-    case "6h-1d":
-      return 15 * 3_600_000;
-    default:
-      return 2 * 86_400_000;
-  }
 }
 
 function sendProgress(bytesRead, fileSize, processedMessages, label) {
