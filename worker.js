@@ -1,14 +1,23 @@
 const REPLY_BUCKETS_MS = [
+  5_000,
+  20_000,
   60_000,
   5 * 60_000,
-  15 * 60_000,
-  60 * 60_000,
+  30 * 60_000,
   6 * 60 * 60_000,
   24 * 60 * 60_000,
-  3 * 24 * 60 * 60_000,
 ];
 
-const REPLY_BUCKET_LABELS = ["<1m", "1-5m", "5-15m", "15-60m", "1-6h", "6-24h", "1-3d", ">3d"];
+const REPLY_BUCKET_LABELS = [
+  "0-5s",
+  "5-20s",
+  "20-60s",
+  "1-5m",
+  "5-30m",
+  "30m-6h",
+  "6h-1d",
+  ">1d",
+];
 const STOPWORDS = new Set([
   "the",
   "and",
@@ -892,22 +901,22 @@ function estimateTypicalReply(replyBuckets) {
 
 function labelToDuration(label) {
   switch (label) {
-    case "<1m":
-      return 30_000;
+    case "0-5s":
+      return 2_500;
+    case "5-20s":
+      return 12_500;
+    case "20-60s":
+      return 40_000;
     case "1-5m":
       return 3 * 60_000;
-    case "5-15m":
-      return 10 * 60_000;
-    case "15-60m":
-      return 35 * 60_000;
-    case "1-6h":
-      return 3.5 * 3_600_000;
-    case "6-24h":
+    case "5-30m":
+      return 17.5 * 60_000;
+    case "30m-6h":
+      return 3.25 * 3_600_000;
+    case "6h-1d":
       return 15 * 3_600_000;
-    case "1-3d":
-      return 2 * 86_400_000;
     default:
-      return 5 * 86_400_000;
+      return 2 * 86_400_000;
   }
 }
 

@@ -155,7 +155,7 @@
                 <h2>回覆速度分布</h2>
               </div>
               <div class="panel-note-row">
-                <p class="panel-note">看這段對話通常隔多久會輪到另一方接話。</p>
+                <p class="panel-note">前段用秒級細分，後段合併成分鐘、小時與天級區間，看回覆節奏更清楚。</p>
                 <button
                   class="info-button"
                   type="button"
@@ -170,7 +170,8 @@
             <div class="info-popover hidden" id="reply-info">
               這張圖看的不是單一訊息有沒有被精準回覆，而是對話在雙方輪流發言時，通常會隔多久。
               例如 A 說完後換 B 出聲，這段間隔就會被算進來；如果同一個人連續傳很多則，會視為同一波發話。
-              目前不會排除長時間沉默，超過 3 天的間隔會直接落在「&gt;3d」這一格。
+              目前區間為 0-5s、5-20s、20-60s、1-5m、5-30m、30m-6h、6h-1d、&gt;1d。
+              這樣可以把大量即時來回的訊號拆開，同時避免長尾區間過碎而難以判讀。
             </div>
             <div id="reply-chart" class="chart"></div>
           </article>

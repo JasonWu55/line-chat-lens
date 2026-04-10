@@ -486,7 +486,7 @@ code {
 
 .reply-breakdown-row {
   display: grid;
-  grid-template-columns: minmax(72px, 96px) minmax(0, 1fr) 56px;
+  grid-template-columns: minmax(84px, 112px) minmax(0, 1fr) 56px;
   gap: 12px;
   align-items: center;
 }

@@ -532,7 +532,6 @@ function renderReplyHistogram(histogram) {
 
   replyChart.innerHTML = `
     <div class="reply-breakdown">
-      <div class="reply-breakdown-head">各區間占比</div>
       ${breakdown}
     </div>
   `;
