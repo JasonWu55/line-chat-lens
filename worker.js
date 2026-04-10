@@ -212,6 +212,7 @@ function createState() {
     replyBuckets: Array(REPLY_BUCKET_LABELS.length).fill(0),
     immediateReplyDelays: [],
     restartReplyDelays: [],
+    replySequence: [],
     calls: [],
     lastMessage: null,
     longestGap: null,
@@ -306,6 +307,7 @@ function processMessageObject(message, state) {
   }
 
   state.lastMessage = { sender, timestamp };
+  state.replySequence.push({ sender, timestamp });
 }
 
 function resolveSender(message) {
@@ -389,6 +391,13 @@ function buildPayload(state) {
         ? `${state.restartReplyDelays.length.toLocaleString()} 次 30 分後重啟的中位數`
         : "沒有足夠的重啟對話",
     },
+    insights: {
+      activeHours: buildActiveHoursInsight(state.heatmap),
+      burstiness: buildBurstinessInsight(dailyEntries),
+      stickiness: buildStickinessInsight(state.immediateReplyDelays.length, state.restartReplyDelays.length),
+      restartFrequency: buildRestartFrequencyInsight(state.restartReplyDelays.length, spanDays),
+      replyAsymmetry: buildReplyAsymmetryInsight(state.replySequence),
+    },
     timeline: monthlyEntries,
     dailyTimeline: dailyEntries
       .sort((left, right) => left.date.localeCompare(right.date))
@@ -420,6 +429,142 @@ function buildPayload(state) {
     calls: buildCallsPayload(state.calls),
     people: participants,
   };
+}
+
+function buildActiveHoursInsight(heatmap) {
+  const hourlyTotals = Array.from({ length: 24 }, (_, hour) => ({
+    hour,
+    count: heatmap.reduce((sum, row) => sum + row[hour], 0),
+  }))
+    .filter((entry) => entry.count > 0)
+    .sort((left, right) => right.count - left.count)
+    .slice(0, 3);
+
+  return {
+    label: hourlyTotals.length ? formatHourRange(hourlyTotals[0].hour) : "N/A",
+    meta: hourlyTotals.length
+      ? hourlyTotals.map((entry) => `${formatHourRange(entry.hour)} (${entry.count.toLocaleString()} 則)`).join(" / ")
+      : "沒有足夠資料",
+  };
+}
+
+function buildBurstinessInsight(dailyEntries) {
+  const dailyTotals = dailyEntries.map((entry) => entry.total).filter((value) => value > 0);
+  const baseline = quantile(dailyTotals, 0.5);
+  const peak = quantile(dailyTotals, 0.9);
+
+  if (baseline === null || peak === null) {
+    return {
+      label: "N/A",
+      meta: "沒有足夠的日級資料",
+    };
+  }
+
+  return {
+    label: `${baseline} / ${peak}`,
+    meta: `平常日 p50 ${baseline.toLocaleString()} 則，爆量日 p90 ${peak.toLocaleString()} 則`,
+  };
+}
+
+function buildStickinessInsight(immediateCount, restartCount) {
+  const total = immediateCount + restartCount;
+  if (!total) {
+    return {
+      label: "N/A",
+      meta: "沒有足夠的交替回覆資料",
+    };
+  }
+
+  return {
+    label: `${((immediateCount / total) * 100).toFixed(1)}%`,
+    meta: `${immediateCount.toLocaleString()} / ${total.toLocaleString()} 次交替回覆在 30 分內接上`,
+  };
+}
+
+function buildRestartFrequencyInsight(restartCount, spanDays) {
+  if (!restartCount || !spanDays) {
+    return {
+      label: restartCount ? "低頻" : "N/A",
+      meta: restartCount ? `${restartCount.toLocaleString()} 次 30 分後重啟對話` : "沒有足夠的重啟對話資料",
+    };
+  }
+
+  const perWeek = (restartCount / Math.max(spanDays / 7, 1)).toFixed(1);
+  return {
+    label: `${perWeek} 次/週`,
+    meta: `${restartCount.toLocaleString()} 次 30 分後重啟對話`,
+  };
+}
+
+function buildReplyAsymmetryInsight(replySequence) {
+  const participantCount = new Set(replySequence.map((entry) => entry.sender)).size;
+  if (participantCount < 2) {
+    return {
+      label: "N/A",
+      meta: "沒有足夠的雙向回覆資料",
+      rows: [],
+    };
+  }
+
+  const pairDelays = new Map();
+  let previous = null;
+  for (const { sender, timestamp } of replySequence) {
+    if (previous && previous.sender !== sender) {
+      const key = `${previous.sender}→${sender}`;
+      if (!pairDelays.has(key)) {
+        pairDelays.set(key, []);
+      }
+      const delay = timestamp - previous.timestamp;
+      if (delay >= 0) {
+        pairDelays.get(key).push(delay);
+      }
+    }
+    previous = { sender, timestamp };
+  }
+
+  const directional = [...pairDelays.entries()]
+    .map(([key, delays]) => ({
+      key,
+      count: delays.length,
+      median: quantile(delays, 0.5),
+    }))
+    .filter((entry) => entry.median !== null)
+    .sort((left, right) => right.count - left.count)
+    .slice(0, 2);
+
+  if (directional.length < 2) {
+    return {
+      label: directional[0] ? formatMetricDuration(directional[0].median) : "N/A",
+      meta: directional[0] ? `${directional[0].key} 的典型回覆` : "沒有足夠的雙向回覆資料",
+      rows: directional[0]
+        ? [
+            {
+              label: formatReplyDirectionLabel(directional[0].key),
+              value: formatMetricDuration(directional[0].median),
+            },
+          ]
+        : [],
+    };
+  }
+
+  const difference = Math.abs(directional[0].median - directional[1].median);
+  return {
+    label: `相差 ${formatMetricDuration(difference)}`,
+    meta: "看雙方接對方話頭時，典型要等多久",
+    rows: directional.map((entry) => ({
+      label: formatReplyDirectionLabel(entry.key),
+      value: formatMetricDuration(entry.median),
+    })),
+  };
+}
+
+function formatReplyDirectionLabel(directionKey) {
+  const [from, to] = directionKey.split("→");
+  if (!from || !to) {
+    return directionKey;
+  }
+
+  return `${to} 接 ${from}`;
 }
 
 function isPhoneCallEvent(message) {
@@ -930,6 +1075,14 @@ function formatDuration(ms) {
   return `${(days / 30).toFixed(1)} 月`;
 }
 
+function formatMetricDuration(ms) {
+  if (ms < 60_000) {
+    return `${Math.round(ms / 1000)}s`;
+  }
+
+  return formatDuration(ms);
+}
+
 function formatShortDate(timestamp) {
   return formatLocalDate(new Date(timestamp));
 }
@@ -945,6 +1098,10 @@ function formatLocalDate(date) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function formatHourRange(hour) {
+  return `${String(hour).padStart(2, "0")}:00-${String((hour + 1) % 24).padStart(2, "0")}:00`;
 }
 
 function sendProgress(bytesRead, fileSize, processedMessages, label) {

@@ -8,6 +8,7 @@ const progressFill = document.querySelector("#progress-fill");
 const progressText = document.querySelector("#progress-text");
 const fileMeta = document.querySelector("#file-meta");
 const summaryGrid = document.querySelector("#summary-grid");
+const insightsGrid = document.querySelector("#insights-grid");
 const timelineChart = document.querySelector("#timeline-chart");
 const dailyTimelineControls = document.querySelector("#daily-timeline-controls");
 const dailyTimelineChart = document.querySelector("#daily-timeline-chart");
@@ -101,6 +102,7 @@ function handleFile(file) {
   dashboard.classList.add("hidden");
   dailyTimelineState = null;
   summaryGrid.innerHTML = "";
+  insightsGrid.innerHTML = "";
   timelineChart.innerHTML = "";
   dailyTimelineControls.innerHTML = "";
   dailyTimelineChart.innerHTML = "";
@@ -126,6 +128,7 @@ function setProgress(value) {
 
 function renderDashboard(payload) {
   renderSummary(payload.summary);
+  renderInsights(payload.insights);
   renderTimeline(payload.timeline, payload.participants);
   renderDailyTimeline(payload.dailyTimeline, payload.participants);
   renderHeatmap(payload.heatmap);
@@ -136,6 +139,65 @@ function renderDashboard(payload) {
   renderMessageMix(payload.messageMix);
   renderCalls(payload.calls);
   renderPeople(payload.people);
+}
+
+function renderInsights(insights) {
+  const cards = [
+    {
+      label: "活躍時段",
+      value: insights.activeHours.label,
+      meta: insights.activeHours.meta,
+    },
+    {
+      label: "爆量程度",
+      value: insights.burstiness.label,
+      meta: insights.burstiness.meta,
+    },
+    {
+      label: "對話黏著度",
+      value: insights.stickiness.label,
+      meta: insights.stickiness.meta,
+    },
+    {
+      label: "重啟頻率",
+      value: insights.restartFrequency.label,
+      meta: insights.restartFrequency.meta,
+    },
+    {
+      label: "雙向回覆速度",
+      value: insights.replyAsymmetry.label,
+      meta: insights.replyAsymmetry.meta,
+      rows: insights.replyAsymmetry.rows || [],
+    },
+  ];
+
+  insightsGrid.innerHTML = cards
+    .map(
+      (card) => `
+        <article class="insight-card">
+          <p class="insight-label">${escapeHtml(card.label)}</p>
+          <p class="insight-value">${escapeHtml(card.value)}</p>
+          <p class="insight-meta">${escapeHtml(card.meta)}</p>
+          ${
+            card.rows?.length
+              ? `<div class="insight-rows">
+                  ${card.rows
+                    .map(
+                      (row) => `
+                        <div class="insight-row">
+                          <span class="insight-row-label">${escapeHtml(row.label)}</span>
+                          <strong class="insight-row-value">${escapeHtml(row.value)}</strong>
+                        </div>
+                      `,
+                    )
+                    .join("")}
+                </div>`
+              : ""
+          }
+        </article>
+      `,
+    )
+    .join("");
 }
 
 function collapseGuide() {

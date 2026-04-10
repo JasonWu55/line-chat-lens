@@ -112,31 +112,18 @@
 
       <section class="dashboard hidden" id="dashboard">
         <div class="summary-grid" id="summary-grid"></div>
+        <article class="panel insights-panel">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker">Insights</p>
+              <h2>關係洞察</h2>
+            </div>
+            <p class="panel-note">先用三張高訊號卡片快速抓出這段對話的節奏、波動與雙向互動差異。</p>
+          </div>
+          <div id="insights-grid" class="insights-grid"></div>
+        </article>
 
         <div class="chart-grid">
-          <article class="panel wide">
-            <div class="panel-head">
-              <div>
-                <p class="panel-kicker">Timeline</p>
-                <h2>月度訊息趨勢</h2>
-              </div>
-              <p class="panel-note">依月份聚合，適合長期對話觀察。</p>
-            </div>
-            <div id="timeline-chart" class="chart"></div>
-          </article>
-
-          <article class="panel wide">
-            <div class="panel-head">
-              <div>
-                <p class="panel-kicker">Daily Pulse</p>
-                <h2>日度訊息趨勢</h2>
-              </div>
-              <p class="panel-note">以天為單位看對話起伏，更容易找到爆量聊天期。</p>
-            </div>
-            <div id="daily-timeline-controls" class="timeline-controls"></div>
-            <div id="daily-timeline-chart" class="chart"></div>
-          </article>
-
           <article class="panel">
             <div class="panel-head">
               <div>
@@ -176,6 +163,29 @@
             <div id="reply-chart" class="chart"></div>
           </article>
 
+          <article class="panel wide">
+            <div class="panel-head">
+              <div>
+                <p class="panel-kicker">Daily Pulse</p>
+                <h2>日度訊息趨勢</h2>
+              </div>
+              <p class="panel-note">先看日級波動，辨認這段關係是穩定往來還是偶發爆量。</p>
+            </div>
+            <div id="daily-timeline-controls" class="timeline-controls"></div>
+            <div id="daily-timeline-chart" class="chart"></div>
+          </article>
+
+          <article class="panel wide">
+            <div class="panel-head">
+              <div>
+                <p class="panel-kicker">Timeline</p>
+                <h2>月度訊息趨勢</h2>
+              </div>
+              <p class="panel-note">把波動拉長到月份尺度，觀察整段對話的熱度起伏。</p>
+            </div>
+            <div id="timeline-chart" class="chart"></div>
+          </article>
+
           <article class="panel">
             <div class="panel-head">
               <div>
@@ -187,15 +197,15 @@
             <div id="days-table" class="table-block"></div>
           </article>
 
-          <article class="panel">
+          <article class="panel wide">
             <div class="panel-head">
               <div>
-                <p class="panel-kicker">Language</p>
-                <h2>近似熱門詞</h2>
+                <p class="panel-kicker">Format</p>
+                <h2>雙方訊息樣態比例</h2>
               </div>
-              <p class="panel-note">使用 bounded heavy-hitter 統計，結果為近似值。</p>
+              <p class="panel-note">比較每位參與者常用哪些訊息形式，輔助判讀互動風格。</p>
             </div>
-            <div id="terms-cloud" class="terms-cloud"></div>
+            <div id="message-mix-panel" class="message-mix-panel"></div>
           </article>
 
           <article class="panel wide">
@@ -204,31 +214,9 @@
                 <p class="panel-kicker">Phrases</p>
                 <h2>雙方愛用詞彙與口頭禪</h2>
               </div>
-              <p class="panel-note">拆分每位參與者，列出高頻詞與常重複的短句。</p>
+              <p class="panel-note">拆分每位參與者，優先看更有個性辨識度的短句與口頭禪。</p>
             </div>
             <div id="phrases-panel" class="phrases-panel"></div>
-          </article>
-
-          <article class="panel wide">
-            <div class="panel-head">
-              <div>
-                <p class="panel-kicker">Format</p>
-                <h2>雙方訊息樣態比例</h2>
-              </div>
-              <p class="panel-note">比較每位參與者常用哪些訊息形式。</p>
-            </div>
-            <div id="message-mix-panel" class="message-mix-panel"></div>
-          </article>
-
-          <article class="panel wide">
-            <div class="panel-head">
-              <div>
-                <p class="panel-kicker">Calls</p>
-                <h2>通話互動分析</h2>
-              </div>
-              <p class="panel-note">從 Telegram 匯出裡的電話事件整理通話頻率、時長與時段。</p>
-            </div>
-            <div id="calls-panel" class="calls-panel"></div>
           </article>
 
           <article class="panel">
@@ -240,6 +228,28 @@
               <p class="panel-note">訊息量、字數、平均長度與媒體比例。</p>
             </div>
             <div id="people-table" class="table-block"></div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="panel-kicker">Language</p>
+                <h2>常見語詞線索</h2>
+              </div>
+              <p class="panel-note">使用 bounded heavy-hitter 近似統計，容易混入口語贅詞，適合當輔助線索。</p>
+            </div>
+            <div id="terms-cloud" class="terms-cloud"></div>
+          </article>
+
+          <article class="panel wide">
+            <div class="panel-head">
+              <div>
+                <p class="panel-kicker">Calls</p>
+                <h2>通話互動分析</h2>
+              </div>
+              <p class="panel-note">從 Telegram 匯出裡的電話事件整理通話頻率、時長與時段。</p>
+            </div>
+            <div id="calls-panel" class="calls-panel"></div>
           </article>
         </div>
       </section>
