@@ -2,6 +2,7 @@ const worker = new Worker("./worker.js", { type: "module" });
 
 const fileInput = document.querySelector("#file-input");
 const dropzone = document.querySelector("#dropzone");
+const demoButton = document.querySelector("#demo-button");
 const dashboard = document.querySelector("#dashboard");
 const statusText = document.querySelector("#status-text");
 const progressFill = document.querySelector("#progress-fill");
@@ -42,13 +43,40 @@ guideToggle.addEventListener("click", () => {
   const isCollapsed = guideContent.classList.toggle("hidden");
   guidePanel.classList.toggle("is-collapsed", isCollapsed);
   guideToggle.setAttribute("aria-expanded", String(!isCollapsed));
-  guideToggle.textContent = isCollapsed ? "查看匯出教學" : "收起匯出教學";
+  guideToggle.textContent = isCollapsed ? "看匯出教學" : "先收起教學";
 });
 
 fileInput.addEventListener("change", (event) => {
   const [file] = event.target.files;
   if (file) {
     handleFile(file);
+  }
+});
+
+demoButton.addEventListener("click", async () => {
+  demoButton.disabled = true;
+  statusText.textContent = "正在載入示範資料";
+  fileMeta.textContent = "正在讀取匿名化 demo.json";
+  setProgress(0);
+
+  try {
+    const response = await fetch("./demo.json");
+    if (!response.ok) {
+      throw new Error(`demo.json 載入失敗 (${response.status})`);
+    }
+
+    const blob = await response.blob();
+    const file = new File([blob], "demo.json", {
+      type: blob.type || "application/json",
+      lastModified: Date.now(),
+    });
+
+    handleFile(file);
+  } catch (error) {
+    statusText.textContent = "示範資料暫時無法載入";
+    fileMeta.textContent = error instanceof Error ? error.message : "目前無法讀取 demo.json，請稍後再試。";
+  } finally {
+    demoButton.disabled = false;
   }
 });
 
@@ -85,7 +113,7 @@ worker.addEventListener("message", ({ data }) => {
 
   if (data.type === "result") {
     setProgress(100);
-    statusText.textContent = "分析完成";
+    statusText.textContent = "分析完成，可以開始看內容了";
     renderDashboard(data.payload);
     dashboard.classList.remove("hidden");
     collapseGuide();
@@ -94,7 +122,7 @@ worker.addEventListener("message", ({ data }) => {
   }
 
   if (data.type === "error") {
-    statusText.textContent = "解析失敗";
+    statusText.textContent = "這份檔案目前無法讀取";
     fileMeta.textContent = data.message;
   }
 });
@@ -119,7 +147,7 @@ function handleFile(file) {
   reactionsPanel.innerHTML = "";
   peopleTable.innerHTML = "";
   setProgress(0);
-  statusText.textContent = "初始化分析";
+  statusText.textContent = "已收到檔案，開始整理中";
   fileMeta.textContent = `${file.name} • ${formatBytes(file.size)}`;
   worker.postMessage({ type: "analyze", file });
 }
@@ -210,7 +238,7 @@ function collapseGuide() {
   guideContent.classList.add("hidden");
   guidePanel.classList.add("is-collapsed");
   guideToggle.setAttribute("aria-expanded", "false");
-  guideToggle.textContent = "查看匯出教學";
+  guideToggle.textContent = "看匯出教學";
 }
 
 function scrollDashboardIntoView() {
@@ -266,7 +294,7 @@ function renderSummary(summary) {
 
 function renderTimeline(timeline, participants) {
   if (!timeline.length) {
-    timelineChart.innerHTML = `<div class="empty-state">沒有足夠的月份資料可繪製。</div>`;
+    timelineChart.innerHTML = `<div class="empty-state">目前還沒有足夠的月份資料可以畫圖。</div>`;
     return;
   }
 
@@ -289,7 +317,7 @@ function renderTimeline(timeline, participants) {
           const segmentHeight = (value / maxTotal) * innerHeight;
           const y = padding.top + innerHeight - offset - segmentHeight;
           offset += segmentHeight;
-          const tooltip = `${entry.label}\n${name}: ${value.toLocaleString()} 則\n總計: ${entry.total.toLocaleString()} 則`;
+          const tooltip = `${entry.label}\n${name}: ${value.toLocaleString()} 則\n合計: ${entry.total.toLocaleString()} 則`;
           return `<rect class="has-tooltip" data-tooltip="${escapeAttribute(tooltip)}" x="${padding.left + index * barWidth + 1}" y="${y}" width="${Math.max(barWidth - 2, 1)}" height="${segmentHeight}" fill="${colors[participantIndex % colors.length]}"></rect>`;
         })
         .join("");
@@ -360,7 +388,7 @@ function renderHeatmap(heatmap) {
 function renderDailyTimeline(timeline, participants) {
   if (!timeline.length) {
     dailyTimelineControls.innerHTML = "";
-    dailyTimelineChart.innerHTML = `<div class="empty-state">沒有足夠的日級資料可繪製。</div>`;
+    dailyTimelineChart.innerHTML = `<div class="empty-state">目前還沒有足夠的每日資料可以畫圖。</div>`;
     return;
   }
 
@@ -389,8 +417,8 @@ function renderDailyTimelineControls() {
   dailyTimelineControls.innerHTML = `
     <div class="timeline-controls-inner">
       <p class="timeline-range-label">目前區間 <strong>${selectedStart}</strong> - <strong>${selectedEnd}</strong></p>
-      <p class="timeline-hint">在圖表上按住滑鼠拖曳，放開後就會放大該日期範圍。</p>
-      <button type="button" class="timeline-reset" id="daily-range-reset" ${isFullRange ? "disabled" : ""}>回到全部區間</button>
+      <p class="timeline-hint">在圖表上按住滑鼠拖曳，放開後就能放大這段日期範圍。</p>
+      <button type="button" class="timeline-reset" id="daily-range-reset" ${isFullRange ? "disabled" : ""}>回到全部日期</button>
     </div>
   `;
 
@@ -406,7 +434,7 @@ function renderDailyTimelineControls() {
 
 function renderDailyTimelineChart() {
   if (!dailyTimelineState) {
-    dailyTimelineChart.innerHTML = `<div class="empty-state">沒有足夠的日級資料可繪製。</div>`;
+    dailyTimelineChart.innerHTML = `<div class="empty-state">目前還沒有足夠的每日資料可以畫圖。</div>`;
     return;
   }
 
@@ -416,7 +444,7 @@ function renderDailyTimelineChart() {
   );
 
   if (!timeline.length) {
-    dailyTimelineChart.innerHTML = `<div class="empty-state">目前選取區間沒有可用資料。</div>`;
+    dailyTimelineChart.innerHTML = `<div class="empty-state">你目前選的區間沒有資料。</div>`;
     return;
   }
 
@@ -454,7 +482,7 @@ function renderDailyTimelineChart() {
           const value = entry.byParticipant[name] || 0;
           const x = padding.left + stepX * index;
           const y = padding.top + innerHeight - (value / maxTotal) * innerHeight;
-          const tooltip = `${entry.label}\n${name}: ${value.toLocaleString()} 則\n總計: ${entry.total.toLocaleString()} 則`;
+          const tooltip = `${entry.label}\n${name}: ${value.toLocaleString()} 則\n合計: ${entry.total.toLocaleString()} 則`;
           return `<circle class="has-tooltip" data-tooltip="${escapeAttribute(tooltip)}" cx="${x}" cy="${y}" r="4" fill="${colors[participantIndex % colors.length]}"></circle>`;
         })
         .join("");
@@ -578,7 +606,7 @@ function bindDailyTimelineBrush({ svg, selection, padding, innerWidth, innerHeig
 
 function renderReplyHistogram(histogram) {
   if (!histogram.bins.length) {
-    replyChart.innerHTML = `<div class="empty-state">沒有足夠的交替回覆資料。</div>`;
+    replyChart.innerHTML = `<div class="empty-state">目前還沒有足夠的輪流回覆資料。</div>`;
     return;
   }
 
@@ -586,7 +614,7 @@ function renderReplyHistogram(histogram) {
   const breakdown = histogram.bins
     .map((bin) => {
       const share = totalReplies ? ((bin.count / totalReplies) * 100).toFixed(1) : "0.0";
-      const tooltip = `${bin.label}\n${bin.count.toLocaleString()} 次交替回覆\n占比 ${share}%`;
+      const tooltip = `${bin.label}\n${bin.count.toLocaleString()} 次輪流回覆\n占比 ${share}%`;
       return `<div class="reply-breakdown-row has-tooltip" data-tooltip="${escapeAttribute(tooltip)}">
         <div class="reply-breakdown-meta">
           <strong>${bin.label}</strong>
@@ -603,7 +631,7 @@ function renderReplyHistogram(histogram) {
       ${breakdown}
     </div>
     <div class="reply-side-note">
-      <div class="reply-side-note-label">最長空窗</div>
+      <div class="reply-side-note-label">最久沒聊天</div>
       <div class="reply-side-note-value">${histogram.longestGapLabel}</div>
       <div class="reply-side-note-meta">${histogram.longestGapRange}</div>
     </div>
@@ -613,7 +641,7 @@ function renderReplyHistogram(histogram) {
 
 function renderTopDays(topDays) {
   if (!topDays.length) {
-    daysTable.innerHTML = `<div class="empty-state">沒有可用的日級統計。</div>`;
+    daysTable.innerHTML = `<div class="empty-state">目前還沒有可用的每日統計。</div>`;
     return;
   }
 
@@ -635,7 +663,7 @@ function renderTopDays(topDays) {
 
 function renderTerms(topTerms) {
   if (!topTerms.length) {
-    termsCloud.innerHTML = `<div class="empty-state">文字訊息太少，無法產生熱門詞。</div>`;
+    termsCloud.innerHTML = `<div class="empty-state">文字訊息太少，還整理不出常見詞。</div>`;
     return;
   }
 
@@ -671,7 +699,7 @@ function renderSignals(summary) {
       value: summary.totalReactionCount.toLocaleString(),
       meta: summary.reactedMessages
         ? `${summary.reactedMessages.toLocaleString()} 則訊息收到至少一個反應`
-        : "目前沒有任何訊息收到反應",
+        : "目前沒有任何訊息收到表情反應",
     },
   ];
 
@@ -688,18 +716,18 @@ function renderSignals(summary) {
 
 function renderTopReactions(topReactions, totalReactionCount) {
   if (!topReactions.length) {
-    reactionsPanel.innerHTML = `<div class="empty-state">這份匯出裡沒有任何表情反應。</div>`;
+    reactionsPanel.innerHTML = `<div class="empty-state">這份聊天裡還沒有表情反應資料。</div>`;
     return;
   }
 
   reactionsPanel.innerHTML = topReactions
     .map((reaction) => {
       const share = totalReactionCount ? ((reaction.count / totalReactionCount) * 100).toFixed(1) : "0.0";
-      const tooltip = `${reaction.label}\n${reaction.count.toLocaleString()} 次反應\n占比 ${share}%`;
+      const tooltip = `${reaction.label}\n${reaction.count.toLocaleString()} 次表情反應\n占比 ${share}%`;
       return `<div class="call-row has-tooltip" data-tooltip="${escapeAttribute(tooltip)}">
         <div class="call-row-meta">
           <strong>${escapeHtml(reaction.label)}</strong>
-          <span>${reaction.kind === "custom" ? "自訂表情" : "一般表情"}</span>
+          <span>${reaction.kind === "custom" ? "自訂表情" : "預設表情"}</span>
         </div>
         <div class="call-row-bar warm"><span style="width:${share}%"></span></div>
         <div class="call-row-share">${share}%</div>
@@ -712,21 +740,21 @@ function renderTopReactions(topReactions, totalReactionCount) {
 
 function renderPeople(people) {
   if (!people.length) {
-    peopleTable.innerHTML = `<div class="empty-state">沒有參與者統計。</div>`;
+    peopleTable.innerHTML = `<div class="empty-state">目前還沒有參與者統計資料。</div>`;
     return;
   }
 
   const maxMessages = Math.max(...people.map((person) => person.messages), 1);
   peopleTable.innerHTML = [
-    `<div class="table-row table-row-wide header"><div>參與者</div><div>訊息數</div><div>平均字數</div><div>媒體訊息占比</div><div>互動訊號</div></div>`,
+    `<div class="table-row table-row-wide header"><div>參與者</div><div>訊息數</div><div>平均字數</div><div>媒體訊息占比</div><div>互動線索</div></div>`,
     ...people.map((person) => {
       const share = ((person.messages / maxMessages) * 100).toFixed(1);
       const topReactionLine = person.reactionsReceived.length
-        ? `收到反應: ${person.reactionCountReceived.toLocaleString()} 次\n最常見: ${person.reactionsReceived
+        ? `收到表情反應: ${person.reactionCountReceived.toLocaleString()} 次\n最常見的是: ${person.reactionsReceived
             .slice(0, 3)
             .map((reaction) => `${reaction.label} ${reaction.count}`)
             .join(" / ")}`
-        : "收到反應: 0 次";
+        : "收到表情反應: 0 次";
       const tooltip = `${person.name}\n訊息數: ${person.messages.toLocaleString()} 則\n總字元: ${person.characters.toLocaleString()}\n平均字數: ${person.avgChars.toFixed(1)}\n媒體訊息占比: ${person.mediaShare}%\n編輯訊息: ${person.edits.toLocaleString()} 則\n轉傳訊息: ${person.forwards.toLocaleString()} 則\n附連結訊息: ${person.links.toLocaleString()} 則\n${topReactionLine}`;
       const signalSummary = [
         `編輯 ${person.edits}`,
@@ -742,7 +770,7 @@ function renderPeople(people) {
 
 function renderCatchphrases(catchphrases) {
   if (!catchphrases.length) {
-    phrasesPanel.innerHTML = `<div class="empty-state">文字訊息太少，無法整理出個人愛用詞。</div>`;
+    phrasesPanel.innerHTML = `<div class="empty-state">文字訊息太少，還整理不出每個人的常用詞。</div>`;
     return;
   }
 
@@ -755,16 +783,16 @@ function renderCatchphrases(catchphrases) {
                 `<span class="phrase-chip has-tooltip" data-tooltip="${escapeAttribute(`${entry.term}\n${person.name} 用了 ${entry.count.toLocaleString()} 次`)}"><strong>${escapeHtml(entry.term)}</strong>${entry.count}</span>`,
             )
             .join("")
-        : `<span class="table-muted">沒有足夠的高頻詞。</span>`;
+        : `<span class="table-muted">目前還看不出明顯的常用詞。</span>`;
 
       const topPhrases = person.topPhrases.length
         ? person.topPhrases
             .map(
               (entry) =>
-                `<span class="phrase-chip warm has-tooltip" data-tooltip="${escapeAttribute(`${entry.term}\n${person.name} 有 ${entry.count.toLocaleString()} 則訊息含有這句`)}">「${escapeHtml(entry.term)}」<strong>${entry.count}</strong></span>`,
+                `<span class="phrase-chip warm has-tooltip" data-tooltip="${escapeAttribute(`${entry.term}\n${person.name} 有 ${entry.count.toLocaleString()} 則訊息出現這句`)}">「${escapeHtml(entry.term)}」<strong>${entry.count}</strong></span>`,
             )
             .join("")
-        : `<span class="table-muted">沒有明顯重複短句。</span>`;
+        : `<span class="table-muted">目前還看不出明顯的固定短句。</span>`;
 
       return `<section class="phrase-person">
         <div class="phrase-person-head">
@@ -788,7 +816,7 @@ function renderCatchphrases(catchphrases) {
 
 function renderMessageMix(messageMix) {
   if (!messageMix.length) {
-    messageMixPanel.innerHTML = `<div class="empty-state">沒有足夠的訊息樣態資料。</div>`;
+    messageMixPanel.innerHTML = `<div class="empty-state">目前還沒有足夠的訊息類型資料。</div>`;
     return;
   }
 
@@ -823,7 +851,7 @@ function renderMessageMix(messageMix) {
 
 function renderCalls(calls) {
   if (!calls || !calls.total) {
-    callsPanel.innerHTML = `<div class="empty-state">這份匯出裡沒有可分析的通話事件。</div>`;
+    callsPanel.innerHTML = `<div class="empty-state">這份聊天裡沒有可分析的通話紀錄。</div>`;
     return;
   }
 
@@ -831,7 +859,7 @@ function renderCalls(calls) {
     {
       label: "通話次數",
       value: calls.total.toLocaleString(),
-      meta: `${calls.connected.toLocaleString()} 次有接通`,
+      meta: `${calls.connected.toLocaleString()} 次有接起來`,
     },
     {
       label: "總通話時長",
@@ -839,14 +867,14 @@ function renderCalls(calls) {
       meta: `平均每次 ${calls.avgDurationLabel}`,
     },
     {
-      label: "最常發起者",
-      value: calls.topCaller?.name || "N/A",
-      meta: calls.topCaller ? `${calls.topCaller.share}% 通話占比` : "找不到發起者資料",
+      label: "最常打的人",
+      value: calls.topCaller?.name || "暫無",
+      meta: calls.topCaller ? `${calls.topCaller.share}% 通話占比` : "目前找不到誰發起通話",
     },
     {
       label: "最常通話時段",
-      value: calls.topHour?.label || "N/A",
-      meta: calls.topHour ? `${calls.topHour.count.toLocaleString()} 次通話` : "沒有足夠資料",
+      value: calls.topHour?.label || "暫無",
+      meta: calls.topHour ? `${calls.topHour.count.toLocaleString()} 次通話` : "目前資料還不夠",
     },
   ]
     .map(
@@ -860,7 +888,7 @@ function renderCalls(calls) {
 
   const peopleRows = calls.byParticipant
     .map(
-      (person) => `<div class="call-row has-tooltip" data-tooltip="${escapeAttribute(`${person.name}\n通話 ${person.count.toLocaleString()} 次\n占比 ${person.share}%\n累計 ${person.durationLabel}`)}">
+      (person) => `<div class="call-row has-tooltip" data-tooltip="${escapeAttribute(`${person.name}\n通話 ${person.count.toLocaleString()} 次\n占比 ${person.share}%\n累積 ${person.durationLabel}`)}">
         <div class="call-row-meta">
           <strong>${escapeHtml(person.name)}</strong>
           <span>${person.count.toLocaleString()} 次 / ${person.durationLabel}</span>
@@ -873,7 +901,7 @@ function renderCalls(calls) {
 
   const monthRows = calls.byMonth
     .map(
-      (entry) => `<div class="call-row has-tooltip" data-tooltip="${escapeAttribute(`${entry.label}\n${entry.count.toLocaleString()} 次通話\n累計 ${entry.durationLabel}`)}">
+      (entry) => `<div class="call-row has-tooltip" data-tooltip="${escapeAttribute(`${entry.label}\n${entry.count.toLocaleString()} 次通話\n累積 ${entry.durationLabel}`)}">
         <div class="call-row-meta">
           <strong>${entry.label}</strong>
           <span>${entry.count.toLocaleString()} 次 / ${entry.durationLabel}</span>
@@ -927,7 +955,7 @@ function renderCalls(calls) {
       </section>
       <section class="call-block">
         <p class="phrase-label">通話結果</p>
-        <div class="call-list">${outcomeChips || `<span class="table-muted">沒有足夠資料。</span>`}</div>
+        <div class="call-list">${outcomeChips || `<span class="table-muted">目前資料還不夠。</span>`}</div>
       </section>
     </div>
   `;

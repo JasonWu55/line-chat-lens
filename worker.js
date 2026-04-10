@@ -168,9 +168,9 @@ async function analyzeFile(file) {
       const match = preamble.match(/"messages"\s*:\s*\[/);
       if (!match) {
         if (preamble.length > 200_000) {
-          throw new Error("找不到 messages 陣列，這似乎不是 Telegram 匯出格式。");
+          throw new Error("這份檔案裡找不到 messages 陣列，可能不是 Telegram 匯出的 JSON 聊天檔。");
         }
-        sendProgress(bytesRead, file.size, processedMessages, "定位 messages 陣列");
+        sendProgress(bytesRead, file.size, processedMessages, "正在確認聊天檔格式");
         continue;
       }
 
@@ -233,13 +233,13 @@ async function analyzeFile(file) {
 
     const progress = (bytesRead / file.size) * 100;
     if (progress - lastProgressSent >= 1 || processedMessages < 10) {
-      sendProgress(bytesRead, file.size, processedMessages, "串流解析中");
+      sendProgress(bytesRead, file.size, processedMessages, "正在整理聊天內容，請稍候");
       lastProgressSent = progress;
     }
   }
 
   if (!foundMessages) {
-    throw new Error("找不到 messages 陣列，無法分析。");
+    throw new Error("這份檔案看起來不是可以分析的 Telegram 對話 JSON。");
   }
 
   finalizeState(state);
@@ -476,20 +476,20 @@ function buildPayload(state) {
       spanDays,
       rangeLabel: buildRangeLabel(state.firstTimestamp, state.lastTimestamp),
       avgPerActiveDay: activeDays ? (state.totalMessages / activeDays).toFixed(1) : "0",
-      activeDensityLabel: spanDays ? `${((activeDays / spanDays) * 100).toFixed(1)}%` : "N/A",
+      activeDensityLabel: spanDays ? `${((activeDays / spanDays) * 100).toFixed(1)}%` : "暫無",
       activeDensityMeta: spanDays
         ? `${activeDays.toLocaleString()} / ${spanDays.toLocaleString()} 天有對話`
-        : "沒有足夠資料",
+        : "目前資料還不夠",
       balanceLabel: buildBalanceLabel(topParticipants),
       balanceMeta: buildBalanceMeta(topParticipants, participants.length),
-      immediateReplyLabel: immediateReply === null ? "N/A" : formatDuration(immediateReply),
+      immediateReplyLabel: immediateReply === null ? "暫無" : formatDuration(immediateReply),
       immediateReplyMeta: state.immediateReplyDelays.length
         ? `${state.immediateReplyDelays.length.toLocaleString()} 次 30 分內接話的 p90`
-        : "沒有足夠的短間隔回覆",
-      restartReplyLabel: restartReply === null ? "N/A" : formatDuration(restartReply),
+        : "目前還沒有足夠的短間隔回覆",
+      restartReplyLabel: restartReply === null ? "暫無" : formatDuration(restartReply),
       restartReplyMeta: state.restartReplyDelays.length
         ? `${state.restartReplyDelays.length.toLocaleString()} 次 30 分後重啟的中位數`
-        : "沒有足夠的重啟對話",
+        : "目前還沒有足夠的重啟對話",
     },
     insights: {
       activeHours: buildActiveHoursInsight(state.heatmap),
@@ -512,10 +512,10 @@ function buildPayload(state) {
         label,
         count: state.replyBuckets[index],
       })),
-      longestGapLabel: state.longestGap ? formatDuration(state.longestGap.duration) : "N/A",
+      longestGapLabel: state.longestGap ? formatDuration(state.longestGap.duration) : "暫無",
       longestGapRange: state.longestGap
         ? `${formatShortDate(state.longestGap.from)} → ${formatShortDate(state.longestGap.to)}`
-        : "沒有足夠資料",
+        : "目前資料還不夠",
     },
     topDays: dailyEntries
       .sort((left, right) => right.total - left.total)
@@ -542,10 +542,10 @@ function buildActiveHoursInsight(heatmap) {
     .slice(0, 3);
 
   return {
-    label: hourlyTotals.length ? formatHourRange(hourlyTotals[0].hour) : "N/A",
+    label: hourlyTotals.length ? formatHourRange(hourlyTotals[0].hour) : "暫無",
     meta: hourlyTotals.length
       ? hourlyTotals.map((entry) => `${formatHourRange(entry.hour)} (${entry.count.toLocaleString()} 則)`).join(" / ")
-      : "沒有足夠資料",
+      : "目前資料還不夠",
   };
 }
 
@@ -556,14 +556,14 @@ function buildBurstinessInsight(dailyEntries) {
 
   if (baseline === null || peak === null) {
     return {
-      label: "N/A",
-      meta: "沒有足夠的日級資料",
+      label: "暫無",
+      meta: "目前還沒有足夠的每日資料",
     };
   }
 
   return {
     label: `${baseline} / ${peak}`,
-    meta: `平常日 p50 ${baseline.toLocaleString()} 則，爆量日 p90 ${peak.toLocaleString()} 則`,
+    meta: `一般日 p50 ${baseline.toLocaleString()} 則，聊天很多的日子 p90 ${peak.toLocaleString()} 則`,
   };
 }
 
@@ -571,22 +571,22 @@ function buildStickinessInsight(immediateCount, restartCount) {
   const total = immediateCount + restartCount;
   if (!total) {
     return {
-      label: "N/A",
-      meta: "沒有足夠的交替回覆資料",
+      label: "暫無",
+      meta: "目前還沒有足夠的輪流回覆資料",
     };
   }
 
   return {
     label: `${((immediateCount / total) * 100).toFixed(1)}%`,
-    meta: `${immediateCount.toLocaleString()} / ${total.toLocaleString()} 次交替回覆在 30 分內接上`,
+    meta: `${immediateCount.toLocaleString()} / ${total.toLocaleString()} 次輪流回覆是在 30 分鐘內接上`,
   };
 }
 
 function buildRestartFrequencyInsight(restartCount, spanDays) {
   if (!restartCount || !spanDays) {
     return {
-      label: restartCount ? "低頻" : "N/A",
-      meta: restartCount ? `${restartCount.toLocaleString()} 次 30 分後重啟對話` : "沒有足夠的重啟對話資料",
+      label: restartCount ? "偏少" : "暫無",
+      meta: restartCount ? `${restartCount.toLocaleString()} 次 30 分後重啟對話` : "目前還沒有足夠的重啟對話資料",
     };
   }
 
@@ -601,8 +601,8 @@ function buildReplyAsymmetryInsight(replySequence) {
   const participantCount = new Set(replySequence.map((entry) => entry.sender)).size;
   if (participantCount < 2) {
     return {
-      label: "N/A",
-      meta: "沒有足夠的雙向回覆資料",
+      label: "暫無",
+      meta: "目前還沒有足夠的雙向回覆資料",
       rows: [],
     };
   }
@@ -635,8 +635,8 @@ function buildReplyAsymmetryInsight(replySequence) {
 
   if (directional.length < 2) {
     return {
-      label: directional[0] ? formatMetricDuration(directional[0].median) : "N/A",
-      meta: directional[0] ? `${directional[0].key} 的典型回覆` : "沒有足夠的雙向回覆資料",
+      label: directional[0] ? formatMetricDuration(directional[0].median) : "暫無",
+      meta: directional[0] ? `${directional[0].key} 這個方向的常見回覆速度` : "目前還沒有足夠的雙向回覆資料",
       rows: directional[0]
         ? [
             {
@@ -651,7 +651,7 @@ function buildReplyAsymmetryInsight(replySequence) {
   const difference = Math.abs(directional[0].median - directional[1].median);
   return {
     label: `相差 ${formatMetricDuration(difference)}`,
-    meta: "看雙方接對方話頭時，典型要等多久",
+    meta: "看雙方接對方話時，平常大概要等多久",
     rows: directional.map((entry) => ({
       label: formatReplyDirectionLabel(entry.key),
       value: formatMetricDuration(entry.median),
