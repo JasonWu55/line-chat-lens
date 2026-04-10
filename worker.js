@@ -18,6 +18,7 @@ const REPLY_BUCKET_LABELS = [
   "6h-1d",
   ">1d",
 ];
+const REPLY_ASYMMETRY_MAX_MS = 30 * 60_000;
 const STOPWORDS = new Set([
   "the",
   "and",
@@ -602,7 +603,7 @@ function buildReplyAsymmetryInsight(replySequence) {
   if (participantCount < 2) {
     return {
       label: "暫無",
-      meta: "目前還沒有足夠的雙向回覆資料",
+      meta: "目前還沒有足夠的雙向回覆資料（只看 30 分鐘內的接話）",
       rows: [],
     };
   }
@@ -616,7 +617,7 @@ function buildReplyAsymmetryInsight(replySequence) {
         pairDelays.set(key, []);
       }
       const delay = timestamp - previous.timestamp;
-      if (delay >= 0) {
+      if (delay >= 0 && delay <= REPLY_ASYMMETRY_MAX_MS) {
         pairDelays.get(key).push(delay);
       }
     }
@@ -636,7 +637,9 @@ function buildReplyAsymmetryInsight(replySequence) {
   if (directional.length < 2) {
     return {
       label: directional[0] ? formatMetricDuration(directional[0].median) : "暫無",
-      meta: directional[0] ? `${directional[0].key} 這個方向的常見回覆速度` : "目前還沒有足夠的雙向回覆資料",
+      meta: directional[0]
+        ? `${directional[0].key} 這個方向在 30 分鐘內的常見回覆速度`
+        : "目前還沒有足夠的雙向回覆資料（只看 30 分鐘內的接話）",
       rows: directional[0]
         ? [
             {
@@ -651,7 +654,7 @@ function buildReplyAsymmetryInsight(replySequence) {
   const difference = Math.abs(directional[0].median - directional[1].median);
   return {
     label: `相差 ${formatMetricDuration(difference)}`,
-    meta: "看雙方接對方話時，平常大概要等多久",
+    meta: "只看 30 分鐘內的接話，比較雙方平常回得多快",
     rows: directional.map((entry) => ({
       label: formatReplyDirectionLabel(entry.key),
       value: formatMetricDuration(entry.median),
