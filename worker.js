@@ -122,10 +122,12 @@ const MESSAGE_TYPE_LABELS = {
   audio: "音訊",
   animation: "GIF/動畫",
   file: "檔案",
+  recalled: "收回訊息",
   other: "其他",
 };
 const LINE_PLACEHOLDER_TYPES = {
   貼圖: "sticker",
+  照片: "photo",
   圖片: "photo",
   相片: "photo",
   影片: "video",
@@ -133,6 +135,7 @@ const LINE_PLACEHOLDER_TYPES = {
   語音訊息: "voice",
   音訊: "audio",
   檔案: "file",
+  禮物: "other",
 };
 
 self.addEventListener("message", async ({ data }) => {
@@ -218,8 +221,11 @@ function collectLineEntries(text) {
     if (messageHeader && currentDate) {
       currentEntry = {
         date: currentDate,
-        time: messageHeader.time,
+        hour: messageHeader.hour,
+        minute: messageHeader.minute,
         remainder: messageHeader.remainder,
+        sender: messageHeader.sender ?? "",
+        content: messageHeader.content ?? "",
         lineNumber: index + 1,
       };
       entries.push(currentEntry);
@@ -227,7 +233,10 @@ function collectLineEntries(text) {
     }
 
     if (currentEntry) {
-      currentEntry.remainder = `${currentEntry.remainder}\n${trimmedLine}`;
+      currentEntry.remainder = currentEntry.remainder
+        ? `${currentEntry.remainder}\n${trimmedLine}`
+        : trimmedLine;
+      currentEntry.content = currentEntry.content ? `${currentEntry.content}\n${trimmedLine}` : trimmedLine;
     }
   }
 
@@ -235,7 +244,7 @@ function collectLineEntries(text) {
 }
 
 function parseLineDateHeader(line) {
-  const match = line.match(/^(\d{4})\.(\d{2})\.(\d{2})(?:\s+.+)?$/);
+  const match = line.match(/^(\d{4})[./](\d{2})[./](\d{2})(?:\s+.+|[（(].+[）)])?$/);
   if (!match) {
     return null;
   }
@@ -248,14 +257,48 @@ function parseLineDateHeader(line) {
 }
 
 function parseLineMessageHeader(line) {
+  const tabbedMatch = line.match(/^(上午|下午)(\d{1,2}:\d{2})\t([^\t]*)\t(.*)$/);
+  if (tabbedMatch) {
+    const { hour, minute } = normalizeLineTime(tabbedMatch[2], tabbedMatch[1]);
+    const sender = tabbedMatch[3].trim();
+    const content = tabbedMatch[4].trim();
+    return {
+      hour,
+      minute,
+      remainder: sender ? `${sender} ${content}`.trim() : content,
+      sender,
+      content,
+    };
+  }
+
   const match = line.match(/^(\d{2}:\d{2})\s+(.+)$/);
   if (!match) {
     return null;
   }
 
+  const { hour, minute } = normalizeLineTime(match[1]);
   return {
-    time: match[1],
+    hour,
+    minute,
     remainder: match[2].trim(),
+    sender: "",
+    content: match[2].trim(),
+  };
+}
+
+function normalizeLineTime(timeText, meridiem = "") {
+  const [rawHour, rawMinute] = timeText.split(":").map((value) => Number(value));
+  let hour = rawHour;
+
+  if (meridiem === "上午") {
+    hour = rawHour === 12 ? 0 : rawHour;
+  } else if (meridiem === "下午") {
+    hour = rawHour === 12 ? 12 : rawHour + 12;
+  }
+
+  return {
+    hour,
+    minute: rawMinute,
   };
 }
 
@@ -263,6 +306,11 @@ function inferSenderNames(entries) {
   const prefixCounts = new Map();
 
   for (const entry of entries) {
+    if (entry.sender) {
+      prefixCounts.set(entry.sender, (prefixCounts.get(entry.sender) || 0) + 1);
+      continue;
+    }
+
     const firstLine = entry.remainder.split("\n", 1)[0].trim();
     const tokens = firstLine.split(/\s+/).filter(Boolean);
     const maxPrefixTokens = Math.min(tokens.length - 1, 6);
@@ -301,30 +349,142 @@ function inferSenderNames(entries) {
 }
 
 function normalizeLineEntry(entry, senderNames) {
-  const sender = senderNames.find(
-    (name) => entry.remainder === name || entry.remainder.startsWith(`${name} `),
-  );
-
-  if (!sender) {
+  if (!entry.sender && !entry.remainder) {
     return null;
   }
 
-  const rawContent = entry.remainder.slice(sender.length).trim();
+  const explicitRecalledMessage = entry.sender
+    ? parseExplicitSenderRecalledMessage(entry.content || "")
+    : parseRecalledMessage(entry.content || entry.remainder || "");
+  const sender = entry.sender || senderNames.find((name) => entry.remainder === name || entry.remainder.startsWith(`${name} `));
+
+  if (!sender && !explicitRecalledMessage) {
+    return null;
+  }
+
+  if (explicitRecalledMessage?.systemOnly) {
+    return null;
+  }
+
+  const resolvedSender = sender || explicitRecalledMessage.sender;
+  const rawContent = entry.sender
+    ? entry.content.trim()
+    : explicitRecalledMessage
+      ? explicitRecalledMessage.content
+      : entry.remainder.slice(resolvedSender.length).trim();
+
+  const callEvent = parseLineCallEvent(rawContent);
+  const timestamp = new Date(entry.date.year, entry.date.month - 1, entry.date.day, entry.hour, entry.minute).getTime();
+  if (rawContent === "已收回訊息") {
+    return {
+      type: "recalled_message",
+      from: resolvedSender,
+      timestamp,
+    };
+  }
+
+  if (callEvent) {
+    return {
+      type: "phone_call",
+      from: resolvedSender,
+      timestamp,
+      duration_seconds: callEvent.durationSeconds,
+      reason: callEvent.reason,
+    };
+  }
+
   const lineMessageType = classifyLineTextMessageType(rawContent);
-  const [hour, minute] = entry.time.split(":").map((value) => Number(value));
-  const timestamp = new Date(entry.date.year, entry.date.month - 1, entry.date.day, hour, minute).getTime();
 
   return {
     type: "message",
-    from: sender,
+    from: resolvedSender,
     timestamp,
     text: lineMessageType === "text" ? rawContent : "",
     lineMessageType,
   };
 }
 
-function classifyLineTextMessageType(text) {
+function parseRecalledMessage(text) {
   const normalized = text.trim();
+  const match = normalized.match(/^(.*?)(?:已)?收回訊息$/);
+  if (!match) {
+    return null;
+  }
+
+  const sender = match[1].trim();
+  if (!sender) {
+    return null;
+  }
+
+  if (sender === "您" || sender === "對方") {
+    return {
+      sender: "",
+      content: "",
+      systemOnly: true,
+    };
+  }
+
+  return {
+    sender,
+    content: "已收回訊息",
+  };
+}
+
+function parseExplicitSenderRecalledMessage(text) {
+  const normalized = text.trim();
+  if (normalized !== "已收回訊息") {
+    return null;
+  }
+
+  return {
+    content: "已收回訊息",
+  };
+}
+
+function parseLineCallEvent(text) {
+  const normalized = text.trim();
+  if (!normalized.startsWith("☎")) {
+    return null;
+  }
+
+  const missedMatch = normalized.match(/^☎\s*未接來電$/);
+  if (missedMatch) {
+    return {
+      durationSeconds: 0,
+      reason: "missed",
+    };
+  }
+
+  const durationMatch = normalized.match(/^☎\s*通話時間\s*(\d{1,2}:\d{2}(?::\d{2})?)$/);
+  if (durationMatch) {
+    return {
+      durationSeconds: parseDurationText(durationMatch[1]),
+      reason: "connected",
+    };
+  }
+
+  return null;
+}
+
+function parseDurationText(text) {
+  const parts = text.split(":").map((value) => Number(value));
+  if (parts.some((value) => !Number.isFinite(value))) {
+    return 0;
+  }
+
+  if (parts.length === 2) {
+    return parts[0] * 60 + parts[1];
+  }
+
+  if (parts.length === 3) {
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  }
+
+  return 0;
+}
+
+function classifyLineTextMessageType(text) {
+  const normalized = normalizeLinePlaceholder(text);
   if (!normalized) {
     return "other";
   }
@@ -340,11 +500,22 @@ function classifyLineTextMessageType(text) {
   return "text";
 }
 
+function normalizeLinePlaceholder(text) {
+  const normalized = text.trim();
+  const bracketedMatch = normalized.match(/^\[(.+)\]$/);
+  if (bracketedMatch) {
+    return bracketedMatch[1].trim();
+  }
+
+  return normalized;
+}
+
 function createState() {
   return {
     chatName: "",
     totalMessages: 0,
     textMessages: 0,
+    recalledMessages: 0,
     editedMessages: 0,
     forwardedMessages: 0,
     linkedMessages: 0,
@@ -381,19 +552,23 @@ function processMessageObject(message, state) {
     return;
   }
 
-  if (message.type !== "message") {
+  if (message.type !== "message" && message.type !== "recalled_message") {
     return;
   }
 
   const date = new Date(timestamp);
-  const text = extractText(message.text);
+  const isRecalledMessage = message.type === "recalled_message";
+  const text = isRecalledMessage ? "" : extractText(message.text);
   const trimmedText = text.trim();
   const hasText = trimmedText.length > 0;
-  const hasMedia = detectMedia(message, hasText);
+  const hasMedia = isRecalledMessage ? false : detectMedia(message, hasText);
 
   state.totalMessages += 1;
   if (hasText) {
     state.textMessages += 1;
+  }
+  if (isRecalledMessage) {
+    state.recalledMessages += 1;
   }
 
   if (state.firstTimestamp === null || timestamp < state.firstTimestamp) {
@@ -406,27 +581,31 @@ function processMessageObject(message, state) {
   const person = getOrCreateParticipant(state.participants, sender);
   person.messages += 1;
   person.characters += trimmedText.length;
+  if (isRecalledMessage) {
+    person.recalls += 1;
+  }
 
-  if (message.forwarded_from) {
+  if (!isRecalledMessage && message.forwarded_from) {
     state.forwardedMessages += 1;
     person.forwards += 1;
   }
 
-  if (message.edited || message.edited_unixtime) {
+  if (!isRecalledMessage && (message.edited || message.edited_unixtime)) {
     state.editedMessages += 1;
     person.edits += 1;
   }
 
   if (
-    message.text_entities &&
-    message.text_entities.some((entity) => entity.type === "link" || entity.type === "text_link")
-      || /https?:\/\/\S+/i.test(trimmedText)
+    !isRecalledMessage &&
+    (message.text_entities &&
+      message.text_entities.some((entity) => entity.type === "link" || entity.type === "text_link")
+      || /https?:\/\/\S+/i.test(trimmedText))
   ) {
     state.linkedMessages += 1;
     person.links += 1;
   }
 
-  if (message.reactions && Array.isArray(message.reactions)) {
+  if (!isRecalledMessage && message.reactions && Array.isArray(message.reactions)) {
     let reactionCountForMessage = 0;
     for (const reaction of message.reactions) {
       const reactionKey = resolveReactionKey(reaction);
@@ -445,7 +624,7 @@ function processMessageObject(message, state) {
   if (hasMedia) {
     person.mediaMessages += 1;
   }
-  incrementMessageType(person.messageTypes, classifyMessageType(message, hasText));
+  incrementMessageType(person.messageTypes, isRecalledMessage ? "recalled" : classifyMessageType(message, hasText));
 
   const dayKey = formatLocalDate(date);
   const monthKey = dayKey.slice(0, 7);
@@ -524,6 +703,7 @@ function buildPayload(state) {
       characters: stats.characters,
       avgChars: stats.messages ? stats.characters / stats.messages : 0,
       mediaShare: stats.messages ? ((stats.mediaMessages / stats.messages) * 100).toFixed(1) : "0.0",
+      recalls: stats.recalls,
       edits: stats.edits,
       forwards: stats.forwards,
       links: stats.links,
@@ -563,6 +743,7 @@ function buildPayload(state) {
     summary: {
       totalMessages: state.totalMessages,
       textMessages: state.textMessages,
+      recalledMessages: state.recalledMessages,
       editedMessages: state.editedMessages,
       forwardedMessages: state.forwardedMessages,
       linkedMessages: state.linkedMessages,
@@ -809,11 +990,8 @@ function extractText(input) {
 }
 
 function detectMedia(message, hasText) {
-  if (
-    message.lineMessageType &&
-    ["sticker", "photo", "video", "voice", "audio", "animation", "file"].includes(message.lineMessageType)
-  ) {
-    return true;
+  if (message.lineMessageType) {
+    return ["sticker", "photo", "video", "voice", "audio", "animation", "file"].includes(message.lineMessageType);
   }
 
   const mediaKeys = [
@@ -867,6 +1045,7 @@ function getOrCreateParticipant(participants, name) {
       messages: 0,
       characters: 0,
       mediaMessages: 0,
+      recalls: 0,
       messageTypes: new Map(),
       edits: 0,
       forwards: 0,
@@ -1262,6 +1441,9 @@ function getCallOutcomeLabel(message) {
   const reason = String(message.discard_reason || message.reason || "").toLowerCase();
   if (!reason) {
     return extractCallDurationSeconds(message) > 0 ? "已接通" : "未知結果";
+  }
+  if (reason.includes("connect")) {
+    return "已接通";
   }
   if (reason.includes("miss")) {
     return "未接";

@@ -683,6 +683,11 @@ function renderTerms(topTerms) {
 function renderSignals(summary) {
   const cards = [
     {
+      label: "收回訊息",
+      value: summary.recalledMessages.toLocaleString(),
+      meta: `${formatShare(summary.recalledMessages, summary.totalMessages)} 的訊息後來被收回`,
+    },
+    {
       label: "編輯訊息",
       value: summary.editedMessages.toLocaleString(),
       meta: `${formatShare(summary.editedMessages, summary.totalMessages)} 的訊息曾被編輯`,
@@ -758,8 +763,9 @@ function renderPeople(people) {
             .map((reaction) => `${reaction.label} ${reaction.count}`)
             .join(" / ")}`
         : "收到表情反應: 0 次";
-      const tooltip = `${person.name}\n訊息數: ${person.messages.toLocaleString()} 則\n總字元: ${person.characters.toLocaleString()}\n平均字數: ${person.avgChars.toFixed(1)}\n媒體訊息占比: ${person.mediaShare}%\n編輯訊息: ${person.edits.toLocaleString()} 則\n轉傳訊息: ${person.forwards.toLocaleString()} 則\n附連結訊息: ${person.links.toLocaleString()} 則\n${topReactionLine}`;
+      const tooltip = `${person.name}\n訊息數: ${person.messages.toLocaleString()} 則\n總字元: ${person.characters.toLocaleString()}\n平均字數: ${person.avgChars.toFixed(1)}\n媒體訊息占比: ${person.mediaShare}%\n收回訊息: ${person.recalls.toLocaleString()} 則\n編輯訊息: ${person.edits.toLocaleString()} 則\n轉傳訊息: ${person.forwards.toLocaleString()} 則\n附連結訊息: ${person.links.toLocaleString()} 則\n${topReactionLine}`;
       const signalSummary = [
+        `收回 ${person.recalls}`,
         `編輯 ${person.edits}`,
         `轉傳 ${person.forwards}`,
         `連結 ${person.links}`,
