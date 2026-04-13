@@ -130,6 +130,15 @@ const LINE_PLACEHOLDER_TYPES = {
   照片: "photo",
   圖片: "photo",
   相片: "photo",
+  Sticker: "sticker",
+  Photo: "photo",
+  Video: "video",
+  "Voice message": "voice",
+  "Voice Message": "voice",
+  Audio: "audio",
+  File: "file",
+  Notes: "file",
+  Gift: "other",
   影片: "video",
   語音: "voice",
   語音訊息: "voice",
@@ -245,14 +254,23 @@ function collectLineEntries(text) {
 
 function parseLineDateHeader(line) {
   const match = line.match(/^(\d{4})[./](\d{2})[./](\d{2})(?:\s+.+|[（(].+[）)])?$/);
-  if (!match) {
+  if (match) {
+    return {
+      year: Number(match[1]),
+      month: Number(match[2]),
+      day: Number(match[3]),
+    };
+  }
+
+  const englishMatch = line.match(/^(?:[A-Za-z]{3},\s+)?(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!englishMatch) {
     return null;
   }
 
   return {
-    year: Number(match[1]),
-    month: Number(match[2]),
-    day: Number(match[3]),
+    year: Number(englishMatch[3]),
+    month: Number(englishMatch[1]),
+    day: Number(englishMatch[2]),
   };
 }
 
@@ -262,6 +280,20 @@ function parseLineMessageHeader(line) {
     const { hour, minute } = normalizeLineTime(tabbedMatch[2], tabbedMatch[1]);
     const sender = tabbedMatch[3].trim();
     const content = tabbedMatch[4].trim();
+    return {
+      hour,
+      minute,
+      remainder: sender ? `${sender} ${content}`.trim() : content,
+      sender,
+      content,
+    };
+  }
+
+  const englishTabbedMatch = line.match(/^(\d{1,2}:\d{2})(AM|PM)\t([^\t]*)\t(.*)$/i);
+  if (englishTabbedMatch) {
+    const { hour, minute } = normalizeLineTime(englishTabbedMatch[1], englishTabbedMatch[2]);
+    const sender = englishTabbedMatch[3].trim();
+    const content = englishTabbedMatch[4].trim();
     return {
       hour,
       minute,
@@ -289,10 +321,15 @@ function parseLineMessageHeader(line) {
 function normalizeLineTime(timeText, meridiem = "") {
   const [rawHour, rawMinute] = timeText.split(":").map((value) => Number(value));
   let hour = rawHour;
+  const normalizedMeridiem = meridiem.toLowerCase();
 
-  if (meridiem === "上午") {
+  if (normalizedMeridiem === "上午") {
     hour = rawHour === 12 ? 0 : rawHour;
-  } else if (meridiem === "下午") {
+  } else if (normalizedMeridiem === "下午") {
+    hour = rawHour === 12 ? 12 : rawHour + 12;
+  } else if (normalizedMeridiem === "am") {
+    hour = rawHour === 12 ? 0 : rawHour;
+  } else if (normalizedMeridiem === "pm") {
     hour = rawHour === 12 ? 12 : rawHour + 12;
   }
 
@@ -362,10 +399,6 @@ function normalizeLineEntry(entry, senderNames) {
     return null;
   }
 
-  if (explicitRecalledMessage?.systemOnly) {
-    return null;
-  }
-
   const resolvedSender = sender || explicitRecalledMessage.sender;
   const rawContent = entry.sender
     ? entry.content.trim()
@@ -380,6 +413,7 @@ function normalizeLineEntry(entry, senderNames) {
       type: "recalled_message",
       from: resolvedSender,
       timestamp,
+      systemOnly: explicitRecalledMessage?.systemOnly || false,
     };
   }
 
@@ -406,6 +440,14 @@ function normalizeLineEntry(entry, senderNames) {
 
 function parseRecalledMessage(text) {
   const normalized = text.trim();
+  if (normalized === "You unsent a message.") {
+    return {
+      sender: "",
+      content: "已收回訊息",
+      systemOnly: true,
+    };
+  }
+
   const match = normalized.match(/^(.*?)(?:已)?收回訊息$/);
   if (!match) {
     return null;
@@ -419,7 +461,7 @@ function parseRecalledMessage(text) {
   if (sender === "您" || sender === "對方") {
     return {
       sender: "",
-      content: "",
+      content: "已收回訊息",
       systemOnly: true,
     };
   }
@@ -432,7 +474,7 @@ function parseRecalledMessage(text) {
 
 function parseExplicitSenderRecalledMessage(text) {
   const normalized = text.trim();
-  if (normalized !== "已收回訊息") {
+  if (normalized !== "已收回訊息" && normalized !== "You unsent a message.") {
     return null;
   }
 
@@ -455,10 +497,26 @@ function parseLineCallEvent(text) {
     };
   }
 
+  const englishMissedMatch = normalized.match(/^☎\s*Missed call$/i);
+  if (englishMissedMatch) {
+    return {
+      durationSeconds: 0,
+      reason: "missed",
+    };
+  }
+
   const durationMatch = normalized.match(/^☎\s*通話時間\s*(\d{1,2}:\d{2}(?::\d{2})?)$/);
   if (durationMatch) {
     return {
       durationSeconds: parseDurationText(durationMatch[1]),
+      reason: "connected",
+    };
+  }
+
+  const englishDurationMatch = normalized.match(/^☎\s*Call time\s*(\d{1,2}:\d{2}(?::\d{2})?)$/i);
+  if (englishDurationMatch) {
+    return {
+      durationSeconds: parseDurationText(englishDurationMatch[1]),
       reason: "connected",
     };
   }
@@ -543,6 +601,7 @@ function createState() {
 function processMessageObject(message, state) {
   const sender = resolveSender(message);
   const timestamp = parseTimestamp(message.timestamp ?? message.date);
+  const isSystemOnly = Boolean(message.systemOnly);
   if (!Number.isFinite(timestamp)) {
     return;
   }
@@ -578,21 +637,28 @@ function processMessageObject(message, state) {
     state.lastTimestamp = timestamp;
   }
 
-  const person = getOrCreateParticipant(state.participants, sender);
-  person.messages += 1;
-  person.characters += trimmedText.length;
-  if (isRecalledMessage) {
-    person.recalls += 1;
+  let person = null;
+  if (!isSystemOnly) {
+    person = getOrCreateParticipant(state.participants, sender);
+    person.messages += 1;
+    person.characters += trimmedText.length;
+    if (isRecalledMessage) {
+      person.recalls += 1;
+    }
   }
 
   if (!isRecalledMessage && message.forwarded_from) {
     state.forwardedMessages += 1;
-    person.forwards += 1;
+    if (person) {
+      person.forwards += 1;
+    }
   }
 
   if (!isRecalledMessage && (message.edited || message.edited_unixtime)) {
     state.editedMessages += 1;
-    person.edits += 1;
+    if (person) {
+      person.edits += 1;
+    }
   }
 
   if (
@@ -602,7 +668,9 @@ function processMessageObject(message, state) {
       || /https?:\/\/\S+/i.test(trimmedText))
   ) {
     state.linkedMessages += 1;
-    person.links += 1;
+    if (person) {
+      person.links += 1;
+    }
   }
 
   if (!isRecalledMessage && message.reactions && Array.isArray(message.reactions)) {
@@ -612,7 +680,9 @@ function processMessageObject(message, state) {
       if (reactionKey) {
         reactionCountForMessage += reaction.count || 0;
         recordReaction(state.reactionTypes, reactionKey, reaction.count || 0);
-        recordReaction(person.reactionsReceived, reactionKey, reaction.count || 0);
+        if (person) {
+          recordReaction(person.reactionsReceived, reactionKey, reaction.count || 0);
+        }
       }
     }
     if (reactionCountForMessage > 0) {
@@ -622,9 +692,13 @@ function processMessageObject(message, state) {
   }
 
   if (hasMedia) {
-    person.mediaMessages += 1;
+    if (person) {
+      person.mediaMessages += 1;
+    }
   }
-  incrementMessageType(person.messageTypes, isRecalledMessage ? "recalled" : classifyMessageType(message, hasText));
+  if (person) {
+    incrementMessageType(person.messageTypes, isRecalledMessage ? "recalled" : classifyMessageType(message, hasText));
+  }
 
   const dayKey = formatLocalDate(date);
   const monthKey = dayKey.slice(0, 7);
@@ -632,8 +706,10 @@ function processMessageObject(message, state) {
   const monthStats = getOrCreateBucket(state.monthly, monthKey);
   dayStats.total += 1;
   monthStats.total += 1;
-  dayStats.byParticipant[sender] = (dayStats.byParticipant[sender] || 0) + 1;
-  monthStats.byParticipant[sender] = (monthStats.byParticipant[sender] || 0) + 1;
+  if (!isSystemOnly) {
+    dayStats.byParticipant[sender] = (dayStats.byParticipant[sender] || 0) + 1;
+    monthStats.byParticipant[sender] = (monthStats.byParticipant[sender] || 0) + 1;
+  }
 
   const weekday = (date.getDay() + 6) % 7;
   state.heatmap[weekday][date.getHours()] += 1;
@@ -643,7 +719,7 @@ function processMessageObject(message, state) {
     updateParticipantLanguage(state.catchphraseStats, sender, trimmedText);
   }
 
-  if (state.lastMessage) {
+  if (!isSystemOnly && state.lastMessage) {
     if (state.lastMessage.sender !== sender) {
       const delay = timestamp - state.lastMessage.timestamp;
       if (delay >= 0) {
@@ -669,8 +745,10 @@ function processMessageObject(message, state) {
     }
   }
 
-  state.lastMessage = { sender, timestamp };
-  state.replySequence.push({ sender, timestamp });
+  if (!isSystemOnly) {
+    state.lastMessage = { sender, timestamp };
+    state.replySequence.push({ sender, timestamp });
+  }
 }
 
 function resolveSender(message) {
