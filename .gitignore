@@ -17,8 +17,9 @@ __pycache__/
 # Node local tooling
 node_modules/
 
-# Telegram export data
-result.json
+# Local chat export data
+result.txt
+[LINE]*.txt
 exports/
 tmp/
 
