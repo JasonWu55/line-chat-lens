@@ -124,6 +124,16 @@ const MESSAGE_TYPE_LABELS = {
   file: "檔案",
   other: "其他",
 };
+const LINE_PLACEHOLDER_TYPES = {
+  貼圖: "sticker",
+  圖片: "photo",
+  相片: "photo",
+  影片: "video",
+  語音: "voice",
+  語音訊息: "voice",
+  音訊: "audio",
+  檔案: "file",
+};
 
 self.addEventListener("message", async ({ data }) => {
   if (data.type !== "analyze") {
@@ -143,108 +153,191 @@ self.addEventListener("message", async ({ data }) => {
 
 async function analyzeFile(file) {
   const state = createState();
-  const reader = file.stream().getReader();
-  const decoder = new TextDecoder();
-  let bytesRead = 0;
-  let preamble = "";
-  let foundMessages = false;
-  let inString = false;
-  let escapeNext = false;
-  let depth = 0;
-  let currentObject = "";
+  sendProgress(0, file.size, 0, "正在讀取 LINE 匯出文字檔");
+
+  const text = await file.text();
+  sendProgress(file.size * 0.15, file.size, 0, "正在辨識日期與訊息格式");
+
+  const entries = collectLineEntries(text);
+  if (!entries.length) {
+    throw new Error("這份檔案裡找不到可分析的 LINE 訊息，請確認你匯出的是聊天文字檔。");
+  }
+
+  const senderNames = inferSenderNames(entries);
+  if (!senderNames.length) {
+    throw new Error("這份 LINE 文字檔裡找不到穩定的發話者名稱格式，暫時無法分析。");
+  }
+
   let processedMessages = 0;
-  let lastProgressSent = 0;
+  const totalEntries = Math.max(entries.length, 1);
 
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) {
-      break;
+  for (const entry of entries) {
+    const message = normalizeLineEntry(entry, senderNames);
+    if (!message) {
+      continue;
     }
 
-    bytesRead += value.byteLength;
-    let text = decoder.decode(value, { stream: true });
+    processMessageObject(message, state);
+    processedMessages += 1;
 
-    if (!foundMessages) {
-      preamble += text;
-      const match = preamble.match(/"messages"\s*:\s*\[/);
-      if (!match) {
-        if (preamble.length > 200_000) {
-          throw new Error("這份檔案裡找不到 messages 陣列，可能不是 Telegram 匯出的 JSON 聊天檔。");
-        }
-        sendProgress(bytesRead, file.size, processedMessages, "正在確認聊天檔格式");
-        continue;
-      }
-
-      const startIndex = match.index + match[0].length;
-      text = preamble.slice(startIndex);
-      preamble = "";
-      foundMessages = true;
-    }
-
-    for (let index = 0; index < text.length; index += 1) {
-      const char = text[index];
-
-      if (depth === 0) {
-        if (char === "{") {
-          depth = 1;
-          currentObject = "{";
-          inString = false;
-          escapeNext = false;
-        } else if (char === "]") {
-          break;
-        }
-        continue;
-      }
-
-      currentObject += char;
-
-      if (escapeNext) {
-        escapeNext = false;
-        continue;
-      }
-
-      if (char === "\\") {
-        escapeNext = true;
-        continue;
-      }
-
-      if (char === "\"") {
-        inString = !inString;
-        continue;
-      }
-
-      if (inString) {
-        continue;
-      }
-
-      if (char === "{") {
-        depth += 1;
-        continue;
-      }
-
-      if (char === "}") {
-        depth -= 1;
-        if (depth === 0) {
-          processedMessages += 1;
-          processMessageObject(JSON.parse(currentObject), state);
-          currentObject = "";
-        }
-      }
-    }
-
-    const progress = (bytesRead / file.size) * 100;
-    if (progress - lastProgressSent >= 1 || processedMessages < 10) {
-      sendProgress(bytesRead, file.size, processedMessages, "正在整理聊天內容，請稍候");
-      lastProgressSent = progress;
+    if (processedMessages < 10 || processedMessages % 500 === 0) {
+      const ratio = processedMessages / totalEntries;
+      sendProgress(file.size * (0.15 + ratio * 0.85), file.size, processedMessages, "正在整理聊天內容，請稍候");
     }
   }
 
-  if (!foundMessages) {
-    throw new Error("這份檔案看起來不是可以分析的 Telegram 對話 JSON。");
+  if (!processedMessages) {
+    throw new Error("這份 LINE 文字檔目前沒有成功辨識出可分析的訊息。");
   }
 
   finalizeState(state);
   return buildPayload(state);
+}
+
+function collectLineEntries(text) {
+  const lines = text.split(/\r?\n/);
+  const entries = [];
+  let currentDate = null;
+  let currentEntry = null;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const rawLine = lines[index].trimEnd();
+    const trimmedLine = rawLine.trim();
+    if (!trimmedLine) {
+      continue;
+    }
+
+    const nextDate = parseLineDateHeader(trimmedLine);
+    if (nextDate) {
+      currentDate = nextDate;
+      currentEntry = null;
+      continue;
+    }
+
+    const messageHeader = parseLineMessageHeader(trimmedLine);
+    if (messageHeader && currentDate) {
+      currentEntry = {
+        date: currentDate,
+        time: messageHeader.time,
+        remainder: messageHeader.remainder,
+        lineNumber: index + 1,
+      };
+      entries.push(currentEntry);
+      continue;
+    }
+
+    if (currentEntry) {
+      currentEntry.remainder = `${currentEntry.remainder}\n${trimmedLine}`;
+    }
+  }
+
+  return entries;
+}
+
+function parseLineDateHeader(line) {
+  const match = line.match(/^(\d{4})\.(\d{2})\.(\d{2})(?:\s+.+)?$/);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+  };
+}
+
+function parseLineMessageHeader(line) {
+  const match = line.match(/^(\d{2}:\d{2})\s+(.+)$/);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    time: match[1],
+    remainder: match[2].trim(),
+  };
+}
+
+function inferSenderNames(entries) {
+  const prefixCounts = new Map();
+
+  for (const entry of entries) {
+    const firstLine = entry.remainder.split("\n", 1)[0].trim();
+    const tokens = firstLine.split(/\s+/).filter(Boolean);
+    const maxPrefixTokens = Math.min(tokens.length - 1, 6);
+
+    for (let size = 1; size <= maxPrefixTokens; size += 1) {
+      const candidate = tokens.slice(0, size).join(" ").trim();
+      if (!candidate || candidate in LINE_PLACEHOLDER_TYPES || candidate === "已收回訊息") {
+        continue;
+      }
+      prefixCounts.set(candidate, (prefixCounts.get(candidate) || 0) + 1);
+    }
+  }
+
+  const primaryThreshold = Math.max(2, Math.ceil(entries.length * 0.005));
+  const fallbackThreshold = 2;
+  const matchingEntries = [...prefixCounts.entries()].filter(([, count]) => count >= primaryThreshold);
+  const candidateEntries = matchingEntries.length
+    ? matchingEntries
+    : [...prefixCounts.entries()].filter(([, count]) => count >= fallbackThreshold);
+
+  const sortedCandidates = candidateEntries
+    .map(([name, count]) => ({ name, count }))
+    .sort((left, right) => right.count - left.count || right.name.length - left.name.length);
+
+  const pruned = [];
+  for (const candidate of sortedCandidates) {
+    const overshadowed = pruned.some(
+      (selected) => selected.name.startsWith(`${candidate.name} `) && selected.count >= candidate.count * 0.8,
+    );
+    if (!overshadowed) {
+      pruned.push(candidate);
+    }
+  }
+
+  return pruned.map((entry) => entry.name).sort((left, right) => right.length - left.length);
+}
+
+function normalizeLineEntry(entry, senderNames) {
+  const sender = senderNames.find(
+    (name) => entry.remainder === name || entry.remainder.startsWith(`${name} `),
+  );
+
+  if (!sender) {
+    return null;
+  }
+
+  const rawContent = entry.remainder.slice(sender.length).trim();
+  const lineMessageType = classifyLineTextMessageType(rawContent);
+  const [hour, minute] = entry.time.split(":").map((value) => Number(value));
+  const timestamp = new Date(entry.date.year, entry.date.month - 1, entry.date.day, hour, minute).getTime();
+
+  return {
+    type: "message",
+    from: sender,
+    timestamp,
+    text: lineMessageType === "text" ? rawContent : "",
+    lineMessageType,
+  };
+}
+
+function classifyLineTextMessageType(text) {
+  const normalized = text.trim();
+  if (!normalized) {
+    return "other";
+  }
+
+  if (LINE_PLACEHOLDER_TYPES[normalized]) {
+    return LINE_PLACEHOLDER_TYPES[normalized];
+  }
+
+  if (/^\d{1,2}:\d{2}(?::\d{2})?$/.test(normalized)) {
+    return "voice";
+  }
+
+  return "text";
 }
 
 function createState() {
@@ -278,7 +371,7 @@ function createState() {
 
 function processMessageObject(message, state) {
   const sender = resolveSender(message);
-  const timestamp = parseTimestamp(message.date);
+  const timestamp = parseTimestamp(message.timestamp ?? message.date);
   if (!Number.isFinite(timestamp)) {
     return;
   }
@@ -327,6 +420,7 @@ function processMessageObject(message, state) {
   if (
     message.text_entities &&
     message.text_entities.some((entity) => entity.type === "link" || entity.type === "text_link")
+      || /https?:\/\/\S+/i.test(trimmedText)
   ) {
     state.linkedMessages += 1;
     person.links += 1;
@@ -402,6 +496,7 @@ function processMessageObject(message, state) {
 
 function resolveSender(message) {
   const candidates = [
+    message.sender,
     message.from,
     message.actor,
     message.member_id,
@@ -685,6 +780,9 @@ function processPhoneCall(message, state, sender, timestamp) {
 }
 
 function parseTimestamp(value) {
+  if (typeof value === "number") {
+    return value;
+  }
   return Date.parse(value);
 }
 
@@ -711,6 +809,13 @@ function extractText(input) {
 }
 
 function detectMedia(message, hasText) {
+  if (
+    message.lineMessageType &&
+    ["sticker", "photo", "video", "voice", "audio", "animation", "file"].includes(message.lineMessageType)
+  ) {
+    return true;
+  }
+
   const mediaKeys = [
     "photo",
     "file",
@@ -724,6 +829,10 @@ function detectMedia(message, hasText) {
 }
 
 function classifyMessageType(message, hasText) {
+  if (message.lineMessageType) {
+    return message.lineMessageType;
+  }
+
   if ("sticker_emoji" in message) {
     return "sticker";
   }
@@ -1209,7 +1318,12 @@ function calculateSpanDays(first, last) {
     return 0;
   }
 
-  return Math.max(1, Math.round((last - first) / 86_400_000) + 1);
+  const firstDate = new Date(first);
+  const lastDate = new Date(last);
+  firstDate.setHours(0, 0, 0, 0);
+  lastDate.setHours(0, 0, 0, 0);
+
+  return Math.max(1, Math.round((lastDate - firstDate) / 86_400_000) + 1);
 }
 
 function quantile(values, ratio) {

@@ -56,25 +56,25 @@ fileInput.addEventListener("change", (event) => {
 demoButton.addEventListener("click", async () => {
   demoButton.disabled = true;
   statusText.textContent = "正在載入示範資料";
-  fileMeta.textContent = "正在讀取匿名化 demo.json";
+  fileMeta.textContent = "正在讀取匿名化 demo.txt";
   setProgress(0);
 
   try {
-    const response = await fetch("./demo.json");
+    const response = await fetch("./demo.txt");
     if (!response.ok) {
-      throw new Error(`demo.json 載入失敗 (${response.status})`);
+      throw new Error(`demo.txt 載入失敗 (${response.status})`);
     }
 
     const blob = await response.blob();
-    const file = new File([blob], "demo.json", {
-      type: blob.type || "application/json",
+    const file = new File([blob], "demo.txt", {
+      type: blob.type || "text/plain",
       lastModified: Date.now(),
     });
 
     handleFile(file);
   } catch (error) {
     statusText.textContent = "示範資料暫時無法載入";
-    fileMeta.textContent = error instanceof Error ? error.message : "目前無法讀取 demo.json，請稍後再試。";
+    fileMeta.textContent = error instanceof Error ? error.message : "目前無法讀取 demo.txt，請稍後再試。";
   } finally {
     demoButton.disabled = false;
   }
@@ -114,6 +114,9 @@ worker.addEventListener("message", ({ data }) => {
   if (data.type === "result") {
     setProgress(100);
     statusText.textContent = "分析完成，可以開始看內容了";
+    if (currentFile) {
+      fileMeta.textContent = `${currentFile.name} • ${formatBytes(currentFile.size)} • 共 ${data.payload.summary.totalMessages.toLocaleString()} 則訊息`;
+    }
     renderDashboard(data.payload);
     dashboard.classList.remove("hidden");
     collapseGuide();
@@ -716,7 +719,7 @@ function renderSignals(summary) {
 
 function renderTopReactions(topReactions, totalReactionCount) {
   if (!topReactions.length) {
-    reactionsPanel.innerHTML = `<div class="empty-state">這份聊天裡還沒有表情反應資料。</div>`;
+    reactionsPanel.innerHTML = `<div class="empty-state">這份聊天裡沒有可辨識的表情反應資料；LINE 純文字匯出通常不會帶出這類資訊。</div>`;
     return;
   }
 
@@ -851,7 +854,7 @@ function renderMessageMix(messageMix) {
 
 function renderCalls(calls) {
   if (!calls || !calls.total) {
-    callsPanel.innerHTML = `<div class="empty-state">這份聊天裡沒有可分析的通話紀錄。</div>`;
+    callsPanel.innerHTML = `<div class="empty-state">這份聊天裡沒有可分析的通話紀錄；LINE 純文字匯出通常不會包含通話事件。</div>`;
     return;
   }
 
